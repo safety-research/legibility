@@ -1,0 +1,2 @@
+# Track Inspect eval logs with Git LFS
+*.eval filter=lfs diff=lfs merge=lfs -text

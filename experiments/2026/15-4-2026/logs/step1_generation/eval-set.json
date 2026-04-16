@@ -1,0 +1,32 @@
+{
+  "eval_set_id": "MzazEoyqGVL5XTKpYUxc9y",
+  "tasks": [
+    {
+      "name": "cot_gen_G1",
+      "task_id": "88rcdZNJ9HPzqEVSgWKxvb",
+      "task_file": "eval.py",
+      "task_args": {},
+      "model": "openrouter/deepseek/deepseek-r1-distill-qwen-32b",
+      "model_args": {},
+      "sequence": 0
+    },
+    {
+      "name": "cot_gen_G2",
+      "task_id": "LLSgxXJGKyv3wQ6TNG2maJ",
+      "task_file": "eval.py",
+      "task_args": {},
+      "model": "openrouter/deepseek/deepseek-r1-0528",
+      "model_args": {},
+      "sequence": 1
+    },
+    {
+      "name": "cot_gen_G3",
+      "task_id": "CFXWtx8zjam8UeVaqciXL6",
+      "task_file": "eval.py",
+      "task_args": {},
+      "model": "openrouter/qwen/qwq-32b",
+      "model_args": {},
+      "sequence": 2
+    }
+  ]
+}
