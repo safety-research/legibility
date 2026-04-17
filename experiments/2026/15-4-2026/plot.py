@@ -197,7 +197,8 @@ def plot_surprisal_distributions(results: dict, save_path: Path | None = None):
                 "ILLEGIBLE": "#3498db",
             }
             for patch, label in zip(
-                bp["boxes"], [lab for lab in labels_of_interest if lab in data_by_label]
+                bp["boxes"],
+                [lab for lab in labels_of_interest if lab in data_by_label],
             ):
                 patch.set_facecolor(colors.get(label, "#cccccc"))
                 patch.set_alpha(0.7)

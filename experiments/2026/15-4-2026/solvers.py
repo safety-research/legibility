@@ -65,38 +65,8 @@ def cot_generation_solver() -> Solver:
 # ---------------------------------------------------------------------------
 
 
-def _compute_mean_surprisal(output) -> float | None:
-    """Compute mean surprisal from output token logprobs.
-
-    Note: With the chat API, we can only get logprobs on the generated
-    (answer) tokens, not on the prefilled CoT tokens. The SPEC (1.2)
-    ideally wants surprisal over the CoT tokens themselves. True CoT
-    token surprisal requires a completions API or local inference.
-
-    This computes answer-token surprisal as an available proxy. The
-    value is stored as "answer_surprisal" to distinguish from the
-    ideal "cot_surprisal" metric.
-    """
-    if not hasattr(output, "choices") or not output.choices:
-        return None
-    choice = output.choices[0]
-    if not hasattr(choice, "logprobs") or not choice.logprobs:
-        return None
-    logprobs = choice.logprobs
-    if not hasattr(logprobs, "content") or not logprobs.content:
-        return None
-    token_logprobs = []
-    for token_info in logprobs.content:
-        if hasattr(token_info, "logprob") and token_info.logprob is not None:
-            token_logprobs.append(token_info.logprob)
-    if not token_logprobs:
-        return None
-    # surprisal = -mean(log_prob)
-    return -sum(token_logprobs) / len(token_logprobs)
-
-
 @solver
-def crossfill_solver(request_logprobs: bool = False) -> Solver:
+def crossfill_solver() -> Solver:
     """C2 crossfill solver: prefill reader with generator's CoT.
 
     Reads CoT from state.metadata["cot_text"], inserts it as an assistant
@@ -104,6 +74,14 @@ def crossfill_solver(request_logprobs: bool = False) -> Solver:
 
     The CoT text should contain only the reasoning trace (no final answer),
     having been stripped by extract_think_block() during CoT extraction.
+
+    Logprobs / surprisal note:
+        SPEC 1.2 requires per-CoT surprisal as a regression covariate,
+        but our reader model providers (Qwen3, Llama-3.1, DeepSeek-V3)
+        do not return logprobs through OpenRouter. Tested April 2026:
+        R1 (404), R2 (404), R3 (unreliable all-zero), R4 (404).
+        Use foreignness.py model-graded scores as the distributional-
+        shift covariate instead.
     """
 
     async def solve(state: TaskState, generate: Generate) -> TaskState:
@@ -129,25 +107,11 @@ def crossfill_solver(request_logprobs: bool = False) -> Solver:
 
         state.messages.append(ChatMessageUser(content=followup))
 
-        # Generate answer; request logprobs for answer-token surprisal
-        generate_kwargs = {
-            "max_tokens": ANSWER_MAX_TOKENS,
-            "temperature": 0.0,
-        }
-        if request_logprobs:
-            generate_kwargs["logprobs"] = True
-
-        state = await generate(state, **generate_kwargs)
-
-        # Compute and store answer-token surprisal if logprobs available
-        if request_logprobs and state.output:
-            surprisal = _compute_mean_surprisal(state.output)
-            if surprisal is not None:
-                state.store.set("answer_surprisal", surprisal)
-                # Note: true CoT token surprisal (SPEC 1.2) requires
-                # completions API or local inference. This is an
-                # answer-token proxy stored for downstream use.
-
+        state = await generate(
+            state,
+            max_tokens=ANSWER_MAX_TOKENS,
+            temperature=0.0,
+        )
         return state
 
     return solve

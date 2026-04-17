@@ -19,7 +19,13 @@ import numpy as np
 from inspect_ai.log import read_eval_log, list_eval_logs
 from inspect_ai.scorer import CORRECT
 
-from config import LOG_DIR_GENERATION, LOG_DIR_READERS, RESULTS_DIR, FULL_READERS
+from config import (
+    LOG_DIR_GENERATION,
+    LOG_DIR_READERS,
+    LOG_DIR_FOREIGNNESS,
+    RESULTS_DIR,
+    FULL_READERS,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -149,6 +155,72 @@ def _build_reader_lookups(reader_records: list[dict]) -> dict:
             }
 
     return lookups
+
+
+# ---------------------------------------------------------------------------
+# Foreignness score extraction (replaces surprisal for V1 regression)
+# ---------------------------------------------------------------------------
+
+
+def extract_foreignness_scores(log_dir: str = LOG_DIR_FOREIGNNESS) -> dict:
+    """Read foreignness evaluation logs and build a lookup table.
+
+    Returns dict keyed by (original_sample_id, generator_id, epoch, reader_id)
+    with values being the numeric foreignness score (1-5).
+
+    These scores replace logprob-based surprisal as the distributional-shift
+    covariate for V1 regression. See foreignness.py for details on why
+    logprobs are unavailable from our reader model providers.
+    """
+    scores = {}
+    log_dir_path = Path(log_dir)
+    if not log_dir_path.exists():
+        return scores
+
+    log_files = list_eval_logs(log_dir)
+    for log_info in log_files:
+        if hasattr(log_info, "status") and log_info.status != "success":
+            continue
+
+        log = read_eval_log(log_info.name)
+        if hasattr(log, "status") and log.status != "success":
+            continue
+
+        task_metadata = {}
+        if hasattr(log, "eval") and hasattr(log.eval, "metadata") and log.eval.metadata:
+            task_metadata = dict(log.eval.metadata)
+
+        if not hasattr(log, "samples") or not log.samples:
+            continue
+
+        for sample in log.samples:
+            # Extract score metadata
+            score_metadata = {}
+            if hasattr(sample, "scores") and sample.scores:
+                for scorer_name, score in sample.scores.items():
+                    if hasattr(score, "metadata") and score.metadata:
+                        score_metadata = dict(score.metadata)
+                    break
+
+            foreignness_score = score_metadata.get("foreignness_score")
+            if foreignness_score is None:
+                continue
+
+            # Build lookup key from score metadata (most specific) or task metadata
+            reader_id = score_metadata.get("reader_id") or task_metadata.get(
+                "reader_id", ""
+            )
+            generator_id = score_metadata.get("generator_id") or task_metadata.get(
+                "generator_id", ""
+            )
+            original_sample_id = score_metadata.get("original_sample_id", "")
+            epoch = score_metadata.get("epoch", 0)
+
+            if reader_id and generator_id and original_sample_id:
+                key = (original_sample_id, generator_id, epoch, reader_id)
+                scores[key] = foreignness_score
+
+    return scores
 
 
 # ---------------------------------------------------------------------------
@@ -294,38 +366,99 @@ def classify_cots(gen_records: list[dict], reader_records: list[dict]) -> list[d
 # ---------------------------------------------------------------------------
 
 
-def run_v1_surprisal_regression(classifications: list[dict]) -> dict:
-    """V1: Logistic regression — C2 success ~ legibility_class + surprisal.
+def run_v1_surprisal_regression(
+    classifications: list[dict],
+    foreignness_scores: dict | None = None,
+) -> dict:
+    """V1: Logistic regression — C2 success ~ legibility_class + covariate.
 
     Uses one-hot encoding for legibility class (nominal, not ordinal).
+
+    The distributional-shift covariate is chosen automatically:
+    - If surprisal values are available (from logprobs), use surprisal.
+    - Otherwise, if foreignness_scores dict is provided, use the
+      model-graded foreignness score (1-5) as a proxy.
+    - If neither is available, runs without the covariate.
     """
     try:
         from sklearn.linear_model import LogisticRegression
     except ImportError:
         return {"error": "scikit-learn not installed"}
 
+    if foreignness_scores is None:
+        foreignness_scores = {}
+
     results = {}
     for reader_id in FULL_READERS:
         X_rows = []
         y_rows = []
+        covariate_name = None
+
         for rec in classifications:
             if rec["label"] in ("FILTERED", None):
-                continue
-            surprisal = rec.get(f"surprisal_{reader_id}")
-            if surprisal is None:
                 continue
             c2_correct = rec["c2_results"].get(reader_id, False)
 
             # One-hot encode legibility class (nominal variable)
             is_legible = 1 if rec["label"] == "REASONING_LEGIBLE" else 0
             is_leaked = 1 if rec["label"] == "ANSWER_LEAKED" else 0
-            # ILLEGIBLE is the reference category (both zeros)
 
-            X_rows.append([is_legible, is_leaked, surprisal])
-            y_rows.append(int(c2_correct))
+            # Try surprisal first, then foreignness as fallback
+            surprisal = rec.get(f"surprisal_{reader_id}")
+            if surprisal is not None:
+                X_rows.append([is_legible, is_leaked, surprisal])
+                y_rows.append(int(c2_correct))
+                if covariate_name is None:
+                    covariate_name = "surprisal"
+            else:
+                # Look up foreignness score
+                fkey = (
+                    rec["sample_id"],
+                    rec["generator_id"],
+                    rec["epoch"],
+                    reader_id,
+                )
+                foreignness = foreignness_scores.get(fkey)
+                if foreignness is not None:
+                    X_rows.append([is_legible, is_leaked, float(foreignness)])
+                    y_rows.append(int(c2_correct))
+                    if covariate_name is None:
+                        covariate_name = "foreignness"
+
+        if covariate_name is None:
+            covariate_name = "none"
 
         if len(X_rows) < 10:
-            results[reader_id] = {"error": "insufficient data", "n": len(X_rows)}
+            # Fall back to regression without covariate
+            X_no_cov = []
+            y_no_cov = []
+            for rec in classifications:
+                if rec["label"] in ("FILTERED", None):
+                    continue
+                c2_correct = rec["c2_results"].get(reader_id, False)
+                is_legible = 1 if rec["label"] == "REASONING_LEGIBLE" else 0
+                is_leaked = 1 if rec["label"] == "ANSWER_LEAKED" else 0
+                X_no_cov.append([is_legible, is_leaked])
+                y_no_cov.append(int(c2_correct))
+
+            if len(X_no_cov) < 10:
+                results[reader_id] = {"error": "insufficient data", "n": len(X_no_cov)}
+                continue
+
+            X = np.array(X_no_cov)
+            y = np.array(y_no_cov)
+            model = LogisticRegression(max_iter=1000)
+            model.fit(X, y)
+            results[reader_id] = {
+                "n": len(y),
+                "covariate": "none",
+                "coefficients": {
+                    "is_legible": float(model.coef_[0][0]),
+                    "is_leaked": float(model.coef_[0][1]),
+                },
+                "intercept": float(model.intercept_[0]),
+                "accuracy": float(model.score(X, y)),
+            }
             continue
 
         X = np.array(X_rows)
@@ -336,10 +469,11 @@ def run_v1_surprisal_regression(classifications: list[dict]) -> dict:
 
         results[reader_id] = {
             "n": len(y),
+            "covariate": covariate_name,
             "coefficients": {
                 "is_legible": float(model.coef_[0][0]),
                 "is_leaked": float(model.coef_[0][1]),
-                "surprisal": float(model.coef_[0][2]),
+                covariate_name: float(model.coef_[0][2]),
             },
             "intercept": float(model.intercept_[0]),
             "accuracy": float(model.score(X, y)),
@@ -475,8 +609,14 @@ def run_classification():
     for label, count in sorted(label_counts.items()):
         print(f"    {label}: {count}")
 
-    print("\nRunning V1: Surprisal regression...")
-    v1 = run_v1_surprisal_regression(classifications)
+    print("Loading foreignness scores...")
+    foreignness_scores = extract_foreignness_scores()
+    print(f"  Found {len(foreignness_scores)} foreignness scores")
+
+    print("\nRunning V1: Distributional-shift regression...")
+    v1 = run_v1_surprisal_regression(
+        classifications, foreignness_scores=foreignness_scores
+    )
     for rid, data in v1.items():
         print(f"  {rid}: {data}")
 

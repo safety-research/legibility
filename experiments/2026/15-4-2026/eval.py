@@ -16,8 +16,20 @@ Step 2 — Reader evaluation (run after Step 1):
         eval.py@reader_c2_R3_G1 eval.py@reader_c2_R3_G2 eval.py@reader_c2_R3_G3 \
         --log-dir logs/step2_readers
 
-    # C2 crossfill (R4 leak detector)
+    # C2 crossfill (R4 leak detector — canonical)
     inspect eval-set eval.py@reader_c2_R4_G1 eval.py@reader_c2_R4_G2 eval.py@reader_c2_R4_G3 \
+        --log-dir logs/step2_readers
+
+    # C2 crossfill (R4 leak detector — truncated last 64 tokens)
+    inspect eval-set eval.py@reader_c2_R4_t64_G1 eval.py@reader_c2_R4_t64_G2 eval.py@reader_c2_R4_t64_G3 \
+        --log-dir logs/step2_readers
+
+    # C2 crossfill (R4 leak detector — truncated last 5% chars)
+    inspect eval-set eval.py@reader_c2_R4_t5p_G1 eval.py@reader_c2_R4_t5p_G2 eval.py@reader_c2_R4_t5p_G3 \
+        --log-dir logs/step2_readers
+
+    # C2 crossfill (R4 leak detector — answer patterns masked with pad token)
+    inspect eval-set eval.py@reader_c2_R4_mask_G1 eval.py@reader_c2_R4_mask_G2 eval.py@reader_c2_R4_mask_G3 \
         --log-dir logs/step2_readers
 
 Individual tasks:
@@ -57,6 +69,9 @@ from data import (
     build_combined_dataset,
     extract_cots_from_logs,
     build_c2_dataset,
+    truncate_last_n_tokens,
+    truncate_last_pct,
+    make_mask_transform,
 )
 from solvers import (
     cot_generation_solver,
@@ -206,25 +221,33 @@ def _load_cots() -> dict:
     return cots
 
 
-def _reader_c2(reader_id: str, generator_id: str) -> Task:
+def _reader_c2(
+    reader_id: str,
+    generator_id: str,
+    cot_transform=None,
+    name_suffix: str = "",
+) -> Task:
     cots = _load_cots()
-    dataset = build_c2_dataset(cots, reader_id, generator_id)
-    request_logprobs = reader_id in FULL_READERS
+    dataset = build_c2_dataset(
+        cots, reader_id, generator_id, cot_transform=cot_transform
+    )
+    task_name = f"reader_c2_{reader_id}{name_suffix}_{generator_id}"
     return Task(
         dataset=dataset,
-        solver=crossfill_solver(request_logprobs=request_logprobs),
+        solver=crossfill_solver(),
         scorer=reader_correctness_scorer(),
         model=READERS[reader_id],
         config=GenerateConfig(
             max_tokens=ANSWER_MAX_TOKENS,
             temperature=0.0,
         ),
-        name=f"reader_c2_{reader_id}_{generator_id}",
+        name=task_name,
         metadata={
             "reader_id": reader_id,
             "generator_id": generator_id,
             "condition": "C2",
             "step": "reader",
+            "cot_transform": name_suffix or "none",
         },
     )
 
@@ -313,6 +336,81 @@ def reader_c2_R4_G3() -> Task:
     return _reader_c2("R4", "G3")
 
 
+# --- R4 truncated variants (truncate last 64 tokens) ---
+
+
+@task
+def reader_c2_R4_t64_G1() -> Task:
+    """C2: R4 reads G1's CoT truncated (last 64 tokens removed)."""
+    return _reader_c2(
+        "R4", "G1", cot_transform=truncate_last_n_tokens, name_suffix="_t64"
+    )
+
+
+@task
+def reader_c2_R4_t64_G2() -> Task:
+    """C2: R4 reads G2's CoT truncated (last 64 tokens removed)."""
+    return _reader_c2(
+        "R4", "G2", cot_transform=truncate_last_n_tokens, name_suffix="_t64"
+    )
+
+
+@task
+def reader_c2_R4_t64_G3() -> Task:
+    """C2: R4 reads G3's CoT truncated (last 64 tokens removed)."""
+    return _reader_c2(
+        "R4", "G3", cot_transform=truncate_last_n_tokens, name_suffix="_t64"
+    )
+
+
+# --- R4 truncated variants (truncate last 5% of characters) ---
+
+
+@task
+def reader_c2_R4_t5p_G1() -> Task:
+    """C2: R4 reads G1's CoT truncated (last 5% of chars removed)."""
+    return _reader_c2("R4", "G1", cot_transform=truncate_last_pct, name_suffix="_t5p")
+
+
+@task
+def reader_c2_R4_t5p_G2() -> Task:
+    """C2: R4 reads G2's CoT truncated (last 5% of chars removed)."""
+    return _reader_c2("R4", "G2", cot_transform=truncate_last_pct, name_suffix="_t5p")
+
+
+@task
+def reader_c2_R4_t5p_G3() -> Task:
+    """C2: R4 reads G3's CoT truncated (last 5% of chars removed)."""
+    return _reader_c2("R4", "G3", cot_transform=truncate_last_pct, name_suffix="_t5p")
+
+
+# --- R4 masked variants (answer-leaking patterns replaced with pad token) ---
+
+
+@task
+def reader_c2_R4_mask_G1() -> Task:
+    """C2: R4 reads G1's CoT with answer-leaking patterns masked."""
+    return _reader_c2(
+        "R4", "G1", cot_transform=make_mask_transform("R4"), name_suffix="_mask"
+    )
+
+
+@task
+def reader_c2_R4_mask_G2() -> Task:
+    """C2: R4 reads G2's CoT with answer-leaking patterns masked."""
+    return _reader_c2(
+        "R4", "G2", cot_transform=make_mask_transform("R4"), name_suffix="_mask"
+    )
+
+
+@task
+def reader_c2_R4_mask_G3() -> Task:
+    """C2: R4 reads G3's CoT with answer-leaking patterns masked."""
+    return _reader_c2(
+        "R4", "G3", cot_transform=make_mask_transform("R4"), name_suffix="_mask"
+    )
+
+
 # ===================================================================
 # Python pipeline orchestration (for `python eval.py` usage)
 # ===================================================================
@@ -353,9 +451,28 @@ def run_step2(max_samples: int | None = None):
     for rid in FULL_READERS:
         for gid in ["G1", "G2", "G3"]:
             tasks.append(_reader_c2(rid, gid))
-    # C2: R4 x generators
+    # C2: R4 x generators (canonical, un-truncated)
     for gid in ["G1", "G2", "G3"]:
         tasks.append(_reader_c2("R4", gid))
+    # C2: R4 x generators (truncated — last 64 tokens)
+    for gid in ["G1", "G2", "G3"]:
+        tasks.append(
+            _reader_c2(
+                "R4", gid, cot_transform=truncate_last_n_tokens, name_suffix="_t64"
+            )
+        )
+    # C2: R4 x generators (truncated — last 5% chars)
+    for gid in ["G1", "G2", "G3"]:
+        tasks.append(
+            _reader_c2("R4", gid, cot_transform=truncate_last_pct, name_suffix="_t5p")
+        )
+    # C2: R4 x generators (masked — answer-leaking patterns replaced with pad token)
+    for gid in ["G1", "G2", "G3"]:
+        tasks.append(
+            _reader_c2(
+                "R4", gid, cot_transform=make_mask_transform("R4"), name_suffix="_mask"
+            )
+        )
 
     print(f"Step 2: Running {len(tasks)} reader tasks")
     success, logs = eval_set(

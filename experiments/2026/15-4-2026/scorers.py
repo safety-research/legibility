@@ -102,11 +102,6 @@ def reader_correctness_scorer() -> Scorer:
                     predicted, target_text
                 )
 
-        # Pull answer-token surprisal from store if present (set by crossfill_solver)
-        # Note: this is answer-token surprisal, not CoT-token surprisal (SPEC 1.2).
-        # True CoT surprisal requires completions API or local inference.
-        answer_surprisal = state.store.get("answer_surprisal", None)
-
         # Build metadata with condition/model info for classification
         score_metadata = {
             "task_type": task_type,
@@ -114,9 +109,6 @@ def reader_correctness_scorer() -> Scorer:
             "target": target_text,
             "completion": completion,
         }
-        if answer_surprisal is not None:
-            score_metadata["surprisal"] = answer_surprisal
-            score_metadata["surprisal_type"] = "answer_tokens"
         # Carry forward generator/reader/condition info from sample metadata
         for key in [
             "generator_id",

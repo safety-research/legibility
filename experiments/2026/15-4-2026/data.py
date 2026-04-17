@@ -2,6 +2,7 @@
 
 import random
 import re
+from collections.abc import Callable
 from pathlib import Path
 
 import datasets as hf_datasets
@@ -112,6 +113,110 @@ def check_math_equivalence(predicted: str | None, target: str | None) -> bool:
     if predicted is None or target is None:
         return False
     return normalize_math_expr(predicted) == normalize_math_expr(target)
+
+
+# ---------------------------------------------------------------------------
+# CoT truncation transforms (for R4 leak detection)
+# ---------------------------------------------------------------------------
+
+
+def truncate_last_n_tokens(text: str, n: int = 64) -> str:
+    """Remove the last n whitespace-delimited tokens."""
+    tokens = text.split()
+    if len(tokens) <= n:
+        return ""
+    return " ".join(tokens[:-n])
+
+
+def truncate_last_pct(text: str, pct: float = 0.05) -> str:
+    """Remove the last pct fraction of characters."""
+    if not text:
+        return ""
+    cut = int(len(text) * (1 - pct))
+    return text[:cut].rstrip()
+
+
+# ---------------------------------------------------------------------------
+# CoT masking transform (replace answer-leaking patterns with pad token)
+# ---------------------------------------------------------------------------
+
+# Pad tokens per reader model family
+READER_PAD_TOKENS: dict[str, str] = {
+    "R1": "<|endoftext|>",  # Qwen3
+    "R2": "<|finetune_right_pad_id|>",  # Llama-3.1
+    "R3": "<\uff5cend\u2581of\u2581sentence\uff5c>",  # DeepSeek-V3: <｜end▁of▁sentence｜>
+    "R4": "<pad>",  # Gemma-3
+}
+
+# Regex patterns that directly convey the answer in a CoT.
+# Derived empirically from model-extracted patterns (study_patterns.py).
+# Order matters: longer/more-specific patterns first to avoid partial matches.
+ANSWER_LEAK_PATTERNS: list[re.Pattern] = [
+    # Boxed answers: \boxed{...}
+    re.compile(r"\\boxed\{[^}]+\}"),
+    # Explicit answer statements with colon
+    re.compile(
+        r"[Tt]he\s+(?:final\s+|correct\s+)?(?:answer|choice|option)\s+"
+        r"(?:is|would be|should be|must be)\s*:\s*\S+"
+    ),
+    # Explicit answer statements without colon
+    re.compile(
+        r"[Tt]he\s+(?:final\s+|correct\s+)?(?:answer|choice|option)\s+"
+        r"(?:is|would be|should be|must be)\s+(?:\*\*)?[^\s,.]+"
+    ),
+    # "Therefore/So/Thus, the answer is X" or "Therefore, X."
+    re.compile(
+        r"(?:[Ss]o|[Tt]herefore|[Tt]hus|[Hh]ence)\s*,?\s*"
+        r"(?:the\s+)?(?:final\s+|correct\s+)?(?:answer|result)\s+"
+        r"(?:is|=)\s*\S+"
+    ),
+    # "Therefore, A." / "Therefore, B" (bare conclusion with MC letter)
+    re.compile(
+        r"(?:[Ss]o|[Tt]herefore|[Tt]hus|[Hh]ence)\s*,?\s+([A-E])\.?\s*$", re.MULTILINE
+    ),
+    # "corresponds/matches to option X" / "closest option is X"
+    re.compile(
+        r"(?:correspond(?:s|ing)\s+to|match(?:es)?\s+(?:the\s+)?(?:description\s+in\s+)?|"
+        r"closest\s+(?:option|answer)\s+(?:is|to))\s*(?:\*\*)?(?:[Oo]ption\s+)?[A-E]"
+    ),
+    # "Option X is correct" / "option X"
+    re.compile(
+        r"(?:[Oo]ption|[Cc]hoice)\s+(?:\*\*)?[A-E](?:\*\*)?\s+(?:is\s+)?(?:correct|right|the answer)"
+    ),
+    # "I'll go with X" / "I will go with X" / "I choose X" / "my answer is X"
+    re.compile(
+        r"(?:I'?ll go with|I will go with|I choose|I select|[Mm]y answer is)\s+\S+"
+    ),
+    # "the answer is X" (short form, end of line)
+    re.compile(r"[Tt]he answer is\s*:?\s*\S+\s*$", re.MULTILINE),
+]
+
+
+def mask_answer_leaks(text: str, pad_token: str) -> str:
+    """Replace answer-leaking patterns in CoT text with a pad token.
+
+    Applies each regex in ANSWER_LEAK_PATTERNS and replaces matches
+    with the reader's pad token string.
+    """
+    if not text:
+        return ""
+    result = text
+    for pattern in ANSWER_LEAK_PATTERNS:
+        result = pattern.sub(pad_token, result)
+    return result
+
+
+def make_mask_transform(reader_id: str) -> Callable[[str], str]:
+    """Create a CoT transform that masks answer-leaking patterns for a given reader.
+
+    Returns a callable suitable for the cot_transform parameter of build_c2_dataset.
+    """
+    pad_token = READER_PAD_TOKENS.get(reader_id, "<pad>")
+
+    def transform(text: str) -> str:
+        return mask_answer_leaks(text, pad_token)
+
+    return transform
 
 
 # ---------------------------------------------------------------------------
@@ -434,12 +539,16 @@ def build_c2_dataset(
     cots: dict,
     reader_id: str,
     generator_id: str,
+    cot_transform: Callable[[str], str] | None = None,
 ) -> MemoryDataset:
     """Build C2 crossfill dataset for a specific (reader, generator) pair.
 
     Each Sample contains the original question as input, correct answer as target,
     and the generator's CoT (reasoning only, no answer) in metadata for the
     crossfill solver.
+
+    If cot_transform is provided, it is applied to the CoT text before storing.
+    Samples where the transform produces an empty string are skipped.
     """
     samples = []
     for (sample_id, gid, epoch), cot_data in cots.items():
@@ -450,8 +559,14 @@ def build_c2_dataset(
         if not cot_data["cot_text"]:
             continue
 
+        cot_text = cot_data["cot_text"]
+        if cot_transform is not None:
+            cot_text = cot_transform(cot_text)
+            if not cot_text:
+                continue
+
         metadata = dict(cot_data["metadata"])
-        metadata["cot_text"] = cot_data["cot_text"]
+        metadata["cot_text"] = cot_text
         metadata["generator_id"] = generator_id
         metadata["reader_id"] = reader_id
         metadata["condition"] = "C2"

@@ -4,7 +4,7 @@ repos:
     hooks:
       - id: check-added-large-files
         args: ['--maxkb=500', '--enforce-all']
-        exclude: '\.eval$'
+        exclude: '\.(eval|json)$'
       - id: check-yaml
       - id: end-of-file-fixer
       - id: trailing-whitespace

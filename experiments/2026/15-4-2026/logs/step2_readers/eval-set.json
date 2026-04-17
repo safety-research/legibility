@@ -1,0 +1,32 @@
+{
+  "eval_set_id": "G6X8NNgkDkNVb7kFy5Mpbp",
+  "tasks": [
+    {
+      "name": "reader_c2_R4_mask_G1",
+      "task_id": "eAMPrmmhSjoRnprxnf3j9z",
+      "task_file": "eval.py",
+      "task_args": {},
+      "model": "openrouter/google/gemma-3-4b-it",
+      "model_args": {},
+      "sequence": 0
+    },
+    {
+      "name": "reader_c2_R4_mask_G2",
+      "task_id": "3NZwzLSWMnZsimWM4xKqRD",
+      "task_file": "eval.py",
+      "task_args": {},
+      "model": "openrouter/google/gemma-3-4b-it",
+      "model_args": {},
+      "sequence": 1
+    },
+    {
+      "name": "reader_c2_R4_mask_G3",
+      "task_id": "6mrCs9KduxjyTnrGf5XFDe",
+      "task_file": "eval.py",
+      "task_args": {},
+      "model": "openrouter/google/gemma-3-4b-it",
+      "model_args": {},
+      "sequence": 2
+    }
+  ]
+}

@@ -1,0 +1,86 @@
+{
+  "eval_set_id": "S6rFyg9DMVCkCtxEFXaEPH",
+  "tasks": [
+    {
+      "name": "foreignness_R1_G1",
+      "task_id": "DWz5SwBbpUNVubcRQZx86R",
+      "task_file": "foreignness.py",
+      "task_args": {},
+      "model": "openrouter/qwen/qwen3-32b",
+      "model_args": {},
+      "sequence": 0
+    },
+    {
+      "name": "foreignness_R1_G2",
+      "task_id": "DaKtdPx89MnvWQLaNMwtTt",
+      "task_file": "foreignness.py",
+      "task_args": {},
+      "model": "openrouter/qwen/qwen3-32b",
+      "model_args": {},
+      "sequence": 1
+    },
+    {
+      "name": "foreignness_R1_G3",
+      "task_id": "9JWvTzNm8oyhGNQQgxfNZj",
+      "task_file": "foreignness.py",
+      "task_args": {},
+      "model": "openrouter/qwen/qwen3-32b",
+      "model_args": {},
+      "sequence": 2
+    },
+    {
+      "name": "foreignness_R2_G1",
+      "task_id": "i8ijgfTF5AtoCVW5h62oCj",
+      "task_file": "foreignness.py",
+      "task_args": {},
+      "model": "openrouter/meta-llama/llama-3.1-70b-instruct",
+      "model_args": {},
+      "sequence": 3
+    },
+    {
+      "name": "foreignness_R2_G2",
+      "task_id": "8jqxXtaXp8biVeDew2AhRk",
+      "task_file": "foreignness.py",
+      "task_args": {},
+      "model": "openrouter/meta-llama/llama-3.1-70b-instruct",
+      "model_args": {},
+      "sequence": 4
+    },
+    {
+      "name": "foreignness_R2_G3",
+      "task_id": "oAUju86ALf2J7J8PtuPkWm",
+      "task_file": "foreignness.py",
+      "task_args": {},
+      "model": "openrouter/meta-llama/llama-3.1-70b-instruct",
+      "model_args": {},
+      "sequence": 5
+    },
+    {
+      "name": "foreignness_R3_G1",
+      "task_id": "UyxX36TjCTbgq45JyS2etM",
+      "task_file": "foreignness.py",
+      "task_args": {},
+      "model": "openrouter/deepseek/deepseek-v3.2",
+      "model_args": {},
+      "sequence": 6
+    },
+    {
+      "name": "foreignness_R3_G2",
+      "task_id": "SYHH6uC3vsdiSQJeZBgu6U",
+      "task_file": "foreignness.py",
+      "task_args": {},
+      "model": "openrouter/deepseek/deepseek-v3.2",
+      "model_args": {},
+      "sequence": 7
+    },
+    {
+      "name": "foreignness_R3_G3",
+      "task_id": "M4v34FYqw9RaWhkbyMSeEB",
+      "task_file": "foreignness.py",
+      "task_args": {},
+      "model": "openrouter/deepseek/deepseek-v3.2",
+      "model_args": {},
+      "sequence": 8
+    }
+  ]
+}

@@ -6,6 +6,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).parent
 LOG_DIR_GENERATION = str(BASE_DIR / "logs" / "step1_generation")
 LOG_DIR_READERS = str(BASE_DIR / "logs" / "step2_readers")
+LOG_DIR_FOREIGNNESS = str(BASE_DIR / "logs" / "foreignness")
 RESULTS_DIR = BASE_DIR / "results"
 
 # --- Generators ---
@@ -19,8 +20,8 @@ GENERATORS = {
 READERS = {
     "R1": "openrouter/qwen/qwen3-32b",
     "R2": "openrouter/meta-llama/llama-3.1-70b-instruct",
-    "R3": "openrouter/deepseek/deepseek-v3",
-    "R4": "openrouter/qwen/qwen3-4b",
+    "R3": "openrouter/deepseek/deepseek-v3.2",
+    "R4": "openrouter/google/gemma-3-4b-it",
 }
 
 FULL_READERS = ["R1", "R2", "R3"]  # R4 is C2-only
