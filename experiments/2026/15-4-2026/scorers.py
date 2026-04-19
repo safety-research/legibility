@@ -24,7 +24,6 @@ from data import extract_mc_answer, extract_math_answer, check_math_equivalence
 # Generator correctness (Step 1)
 # ---------------------------------------------------------------------------
 
-
 @scorer(metrics=[accuracy(), stderr()])
 def generator_correctness_scorer() -> Scorer:
     """Score generator output and store full CoT for downstream extraction."""
@@ -39,16 +38,14 @@ def generator_correctness_scorer() -> Scorer:
 
         if task_type == "multiple_choice":
             predicted = extract_mc_answer(completion)
-            correct = predicted is not None and predicted == target_text
+            correct = (predicted is not None and predicted == target_text)
         elif task_type == "open_ended_math":
             predicted = extract_math_answer(completion)
             correct = check_math_equivalence(predicted, target_text)
         else:
             predicted = extract_mc_answer(completion) or extract_math_answer(completion)
             if predicted:
-                correct = (predicted == target_text) or check_math_equivalence(
-                    predicted, target_text
-                )
+                correct = (predicted == target_text) or check_math_equivalence(predicted, target_text)
 
         if predicted is None:
             value = NOANSWER
@@ -76,7 +73,6 @@ def generator_correctness_scorer() -> Scorer:
 # Reader correctness (Step 2)
 # ---------------------------------------------------------------------------
 
-
 @scorer(metrics=[accuracy(), stderr()])
 def reader_correctness_scorer() -> Scorer:
     """Score reader answers and record surprisal/condition metadata."""
@@ -91,16 +87,14 @@ def reader_correctness_scorer() -> Scorer:
 
         if task_type == "multiple_choice":
             predicted = extract_mc_answer(completion)
-            correct = predicted is not None and predicted == target_text
+            correct = (predicted is not None and predicted == target_text)
         elif task_type == "open_ended_math":
             predicted = extract_math_answer(completion)
             correct = check_math_equivalence(predicted, target_text)
         else:
             predicted = extract_mc_answer(completion) or extract_math_answer(completion)
             if predicted:
-                correct = (predicted == target_text) or check_math_equivalence(
-                    predicted, target_text
-                )
+                correct = (predicted == target_text) or check_math_equivalence(predicted, target_text)
 
         # Build metadata with condition/model info for classification
         score_metadata = {
@@ -110,14 +104,8 @@ def reader_correctness_scorer() -> Scorer:
             "completion": completion,
         }
         # Carry forward generator/reader/condition info from sample metadata
-        for key in [
-            "generator_id",
-            "reader_id",
-            "condition",
-            "epoch",
-            "original_sample_id",
-            "dataset",
-        ]:
+        for key in ["generator_id", "reader_id", "condition",
+                     "epoch", "original_sample_id", "dataset"]:
             if key in state.metadata:
                 score_metadata[key] = state.metadata[key]
 

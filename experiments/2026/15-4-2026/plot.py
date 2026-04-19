@@ -28,7 +28,6 @@ def load_results() -> dict:
 # Plot 1: Classification distribution per generator (grouped bar)
 # ---------------------------------------------------------------------------
 
-
 def plot_classification_distribution(results: dict, save_path: Path | None = None):
     """Grouped bar chart of classification labels per generator with error bars."""
     classifications = results["classifications"]
@@ -67,17 +66,8 @@ def plot_classification_distribution(results: dict, save_path: Path | None = Non
                 errors.append(0)
 
         offset = (i - n_labels / 2 + 0.5) * bar_width
-        ax.bar(
-            x + offset,
-            values,
-            bar_width,
-            label=label,
-            color=color,
-            yerr=errors,
-            ecolor="black",
-            capsize=3,
-            alpha=0.85,
-        )
+        ax.bar(x + offset, values, bar_width, label=label, color=color,
+               yerr=errors, ecolor="black", capsize=3, alpha=0.85)
 
     ax.set_xlabel("Generator")
     ax.set_ylabel("Proportion")
@@ -95,7 +85,6 @@ def plot_classification_distribution(results: dict, save_path: Path | None = Non
 # ---------------------------------------------------------------------------
 # Plot 2: Reader agreement heatmap
 # ---------------------------------------------------------------------------
-
 
 def plot_reader_agreement(results: dict, save_path: Path | None = None):
     """Heatmap of pairwise Cohen's kappa between readers."""
@@ -128,15 +117,8 @@ def plot_reader_agreement(results: dict, save_path: Path | None = None):
 
     for i in range(n):
         for j in range(n):
-            ax.text(
-                j,
-                i,
-                f"{matrix[i, j]:.2f}",
-                ha="center",
-                va="center",
-                fontsize=12,
-                color="black",
-            )
+            ax.text(j, i, f"{matrix[i, j]:.2f}", ha="center", va="center",
+                    fontsize=12, color="black")
 
     plt.colorbar(im, ax=ax, label="Cohen's Kappa")
     plt.tight_layout()
@@ -149,15 +131,13 @@ def plot_reader_agreement(results: dict, save_path: Path | None = None):
 # Plot 3: Surprisal distributions by legibility class
 # ---------------------------------------------------------------------------
 
-
 def plot_surprisal_distributions(results: dict, save_path: Path | None = None):
     """Box plots of surprisal by legibility class for each reader with error bars."""
     classifications = results["classifications"]
     labels_of_interest = ["ANSWER_LEAKED", "REASONING_LEGIBLE", "ILLEGIBLE"]
 
-    fig, axes = plt.subplots(
-        1, len(FULL_READERS), figsize=(5 * len(FULL_READERS), 6), sharey=True
-    )
+    fig, axes = plt.subplots(1, len(FULL_READERS), figsize=(5 * len(FULL_READERS), 6),
+                             sharey=True)
     if len(FULL_READERS) == 1:
         axes = [axes]
 
@@ -184,22 +164,11 @@ def plot_surprisal_distributions(results: dict, save_path: Path | None = None):
                 tick_labels.append(label.replace("_", "\n"))
 
         if plot_data:
-            bp = ax.boxplot(
-                plot_data,
-                positions=positions,
-                widths=0.5,
-                patch_artist=True,
-                showmeans=True,
-            )
-            colors = {
-                "ANSWER_LEAKED": "#e74c3c",
-                "REASONING_LEGIBLE": "#2ecc71",
-                "ILLEGIBLE": "#3498db",
-            }
-            for patch, label in zip(
-                bp["boxes"],
-                [lab for lab in labels_of_interest if lab in data_by_label],
-            ):
+            bp = ax.boxplot(plot_data, positions=positions, widths=0.5,
+                            patch_artist=True, showmeans=True)
+            colors = {"ANSWER_LEAKED": "#e74c3c", "REASONING_LEGIBLE": "#2ecc71",
+                       "ILLEGIBLE": "#3498db"}
+            for patch, label in zip(bp["boxes"], [l for l in labels_of_interest if l in data_by_label]):
                 patch.set_facecolor(colors.get(label, "#cccccc"))
                 patch.set_alpha(0.7)
 
@@ -207,9 +176,7 @@ def plot_surprisal_distributions(results: dict, save_path: Path | None = None):
             for pos, d in zip(positions, plot_data):
                 mean = np.mean(d)
                 sem = np.std(d, ddof=1) / np.sqrt(len(d)) if len(d) > 1 else 0
-                ax.errorbar(
-                    pos, mean, yerr=1.96 * sem, fmt="ko", capsize=5, markersize=4
-                )
+                ax.errorbar(pos, mean, yerr=1.96 * sem, fmt="ko", capsize=5, markersize=4)
 
         ax.set_xticks(positions)
         ax.set_xticklabels(tick_labels, fontsize=8)
@@ -226,7 +193,6 @@ def plot_surprisal_distributions(results: dict, save_path: Path | None = None):
 # ---------------------------------------------------------------------------
 # Plot 4: V1 regression coefficients with bootstrap CIs
 # ---------------------------------------------------------------------------
-
 
 def plot_v1_coefficients(results: dict, save_path: Path | None = None):
     """Bar chart of logistic regression coefficients with bootstrap error bars."""
@@ -262,17 +228,8 @@ def plot_v1_coefficients(results: dict, save_path: Path | None = None):
         errors = [abs(v) * 0.2 for v in vals]  # placeholder 20% relative SE
         offset = (i - n_coefs / 2 + 0.5) * bar_width
         color = colors_list[i % len(colors_list)]
-        ax.bar(
-            x + offset,
-            vals,
-            bar_width,
-            label=name,
-            color=color,
-            yerr=errors,
-            ecolor="black",
-            capsize=3,
-            alpha=0.85,
-        )
+        ax.bar(x + offset, vals, bar_width, label=name, color=color,
+               yerr=errors, ecolor="black", capsize=3, alpha=0.85)
 
     ax.set_xlabel("Reader")
     ax.set_ylabel("Logistic Regression Coefficient")
@@ -292,7 +249,6 @@ def plot_v1_coefficients(results: dict, save_path: Path | None = None):
 # Main
 # ---------------------------------------------------------------------------
 
-
 def generate_all_plots():
     """Generate all Phase 1 plots."""
     results = load_results()
@@ -300,9 +256,7 @@ def generate_all_plots():
     figures_dir.mkdir(parents=True, exist_ok=True)
 
     print("Generating classification distribution plot...")
-    plot_classification_distribution(
-        results, figures_dir / "classification_distribution.png"
-    )
+    plot_classification_distribution(results, figures_dir / "classification_distribution.png")
 
     print("Generating reader agreement heatmap...")
     plot_reader_agreement(results, figures_dir / "reader_agreement.png")

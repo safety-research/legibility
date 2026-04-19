@@ -1,0 +1,12 @@
+torch>=2.0
+transformers>=4.40
+datasets
+scikit-learn
+scipy
+numpy
+matplotlib
+tqdm
+python-dotenv
+inspect-ai
+bitsandbytes
+accelerate

@@ -16,7 +16,6 @@ from config import COT_MAX_TOKENS, COT_TEMPERATURE, ANSWER_MAX_TOKENS
 # Step 1: CoT generation
 # ---------------------------------------------------------------------------
 
-
 @solver
 def cot_generation_solver() -> Solver:
     """Solver for generating CoTs from reasoning models.
@@ -24,14 +23,13 @@ def cot_generation_solver() -> Solver:
     Adds instruction to think step by step, then generates
     at high temperature to get diverse reasoning traces.
     """
-
     async def solve(state: TaskState, generate: Generate) -> TaskState:
         task_type = state.metadata.get("task_type", "")
 
         if task_type == "multiple_choice":
             suffix = (
                 "\n\nAfter your reasoning, state your final answer as "
-                '"The answer is: X" where X is the letter (A, B, C, or D).'
+                "\"The answer is: X\" where X is the letter (A, B, C, or D)."
             )
         else:
             suffix = (
@@ -64,7 +62,6 @@ def cot_generation_solver() -> Solver:
 # C2: Crossfill (prefill reader with generator's CoT)
 # ---------------------------------------------------------------------------
 
-
 @solver
 def crossfill_solver() -> Solver:
     """C2 crossfill solver: prefill reader with generator's CoT.
@@ -83,7 +80,6 @@ def crossfill_solver() -> Solver:
         Use foreignness.py model-graded scores as the distributional-
         shift covariate instead.
     """
-
     async def solve(state: TaskState, generate: Generate) -> TaskState:
         cot_text = state.metadata.get("cot_text", "")
         if not cot_text:
@@ -91,13 +87,15 @@ def crossfill_solver() -> Solver:
             return state
 
         # Insert the CoT as an assistant prefill message
-        state.messages.append(ChatMessageAssistant(content=cot_text))
+        state.messages.append(
+            ChatMessageAssistant(content=cot_text)
+        )
 
         task_type = state.metadata.get("task_type", "")
         if task_type == "multiple_choice":
             followup = (
                 "Based on the reasoning above, what is the final answer? "
-                'Reply with "The answer is: X" where X is the letter.'
+                "Reply with \"The answer is: X\" where X is the letter."
             )
         else:
             followup = (
@@ -105,7 +103,9 @@ def crossfill_solver() -> Solver:
                 "Reply with your answer inside \\boxed{} notation."
             )
 
-        state.messages.append(ChatMessageUser(content=followup))
+        state.messages.append(
+            ChatMessageUser(content=followup)
+        )
 
         state = await generate(
             state,
@@ -121,11 +121,9 @@ def crossfill_solver() -> Solver:
 # C1: Self CoT (reader generates its own reasoning)
 # ---------------------------------------------------------------------------
 
-
 @solver
 def self_cot_solver() -> Solver:
     """C1 solver: reader generates its own CoT before answering."""
-
     async def solve(state: TaskState, generate: Generate) -> TaskState:
         task_type = state.metadata.get("task_type", "")
 
@@ -133,7 +131,7 @@ def self_cot_solver() -> Solver:
             suffix = (
                 "\n\nThink step by step before answering. "
                 "After your reasoning, state your final answer as "
-                '"The answer is: X" where X is the letter (A, B, C, or D).'
+                "\"The answer is: X\" where X is the letter (A, B, C, or D)."
             )
         else:
             suffix = (
@@ -166,18 +164,16 @@ def self_cot_solver() -> Solver:
 # C4: No CoT (reader answers directly)
 # ---------------------------------------------------------------------------
 
-
 @solver
 def no_cot_solver() -> Solver:
     """C4 solver: reader answers with no chain-of-thought."""
-
     async def solve(state: TaskState, generate: Generate) -> TaskState:
         task_type = state.metadata.get("task_type", "")
 
         if task_type == "multiple_choice":
             suffix = (
                 "\n\nAnswer with just the letter. No explanation. "
-                '"The answer is: X" where X is the letter.'
+                "\"The answer is: X\" where X is the letter."
             )
         else:
             suffix = (

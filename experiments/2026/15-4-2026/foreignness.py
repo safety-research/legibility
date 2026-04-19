@@ -118,7 +118,6 @@ formatted as: SCORE: N"""
 # Foreignness solver
 # ---------------------------------------------------------------------------
 
-
 @solver
 def foreignness_solver() -> Solver:
     """Ask the reader model to self-judge how foreign a CoT feels."""
@@ -204,7 +203,6 @@ LOG_DIR_FOREIGNNESS = str(Path(__file__).parent / "logs" / "foreignness")
 def _load_cots() -> dict:
     """Load CoTs from Step 1 logs."""
     import sys
-
     cots = extract_cots_from_logs(LOG_DIR_GENERATION)
     if not cots:
         print(f"ERROR: No CoTs found in {LOG_DIR_GENERATION}. Run Step 1 first.")
@@ -244,7 +242,6 @@ def _build_foreignness_task(reader_id: str, generator_id: str) -> Task:
 # ---------------------------------------------------------------------------
 # 9 task definitions: foreignness_R{1,2,3}_G{1,2,3}
 # ---------------------------------------------------------------------------
-
 
 @task
 def foreignness_R1_G1() -> Task:

@@ -135,3 +135,49 @@ inspect eval-set \
 - **R2**: llama-3.1-70b-instruct (non-reasoning reader)
 - **R3**: deepseek-v3 (base model control)
 - **R4**: qwen3-4b (answer-leakage detector, C2 only)
+
+## Phase 2: Activation Analysis
+
+Investigates **why** some CoTs are legible and others aren't by analyzing the internal representations of generator and reader models. All GPU code is in Jupyter notebooks for execution on a remote H200 (80GB).
+
+### Classification Update
+
+The original classification used plain R4, which classified ~96% of samples as ANSWER_LEAKED. Three R4 CoT transforms were tested to address this:
+
+| R4 variant | G1 pass rate | G2 pass rate | G3 pass rate |
+|---|---|---|---|
+| Plain | 92.6% | 99.2% | 92.6% |
+| Mask | 87.9% | 92.6% | 90.2% |
+| t5p (5%) | 75.8% | 88.3% | 75.0% |
+| **t64 (64 tok)** | **42.2%** | **66.4%** | **47.7%** |
+
+Using `_t64` yields a workable label distribution: 148 leaked, 79 legible, 60 illegible, 277 filtered.
+
+### Phase 2 Files
+
+| File | Experiment | GPU | Purpose |
+|------|-----------|-----|---------|
+| `phase2_utils.py` | -- | -- | Shared utilities: data loading, model loading, activation extraction, probes, plotting |
+| `notebooks/01_extract_activations_generators_h200.ipynb` | NB1 | Yes | Extract G3 + G1 activations (last-token, question-token, full-seq) |
+| `notebooks/02_extract_activations_reader_h200_r2.ipynb` | NB2 | Yes | Extract R2 activations (4-bit quantized Llama-70B) |
+| `notebooks/03_probe_legibility_generators_sklearn.ipynb` | NB3: A1+B | No | Linear probes for legibility and pre-CoT prediction |
+| `notebooks/04_compare_geometry_generators_cka.ipynb` | NB4: A2 | No | CKA similarity between legible/illegible trajectories |
+| `notebooks/05_analyze_attention_generators_heads.ipynb` | NB5: A3 | Yes | Attention entropy analysis |
+| `notebooks/06_analyze_transition_generators_truncation.ipynb` | NB6: C | No | Within-CoT transition dynamics |
+| `notebooks/07_analyze_activations_reader_r2.ipynb` | NB7: D | No | Reader-side activation analysis |
+| `notebooks/08_compare_narration_g1g3_activations.ipynb` | NB8: F1/F2 | No | G1 vs G3 activation comparison |
+| `notebooks/09_plot_results_phase2_summary.ipynb` | NB9 | No | Consolidated summary plots |
+
+### Execution Order
+
+```
+Day 1:  NB1 (extract G3 + G1 activations)           ~3h GPU
+Day 2:  NB2 (extract R2 activations)                 ~4h GPU
+        NB3 (probes A1 + B -- CPU alongside NB2)     ~15 min
+        NB4 (CKA A2 -- CPU)                          ~30 min
+        NB6 (transition C -- CPU)                     ~30 min
+Day 3:  NB5 (attention A3 -- GPU)                     ~1h GPU
+        NB7 (reader D -- CPU)                         ~15 min
+        NB8 (narration F1/F2 -- CPU)                  ~15 min
+        NB9 (consolidated plots)                      ~10 min
+```

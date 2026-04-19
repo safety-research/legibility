@@ -19,19 +19,12 @@ import numpy as np
 from inspect_ai.log import read_eval_log, list_eval_logs
 from inspect_ai.scorer import CORRECT
 
-from config import (
-    LOG_DIR_GENERATION,
-    LOG_DIR_READERS,
-    LOG_DIR_FOREIGNNESS,
-    RESULTS_DIR,
-    FULL_READERS,
-)
+from config import LOG_DIR_GENERATION, LOG_DIR_READERS, LOG_DIR_FOREIGNNESS, RESULTS_DIR, FULL_READERS
 
 
 # ---------------------------------------------------------------------------
 # Log reading helpers
 # ---------------------------------------------------------------------------
-
 
 def _read_all_samples(log_dir: str) -> list[dict]:
     """Read all samples from all successful logs in a directory into flat dicts."""
@@ -52,9 +45,7 @@ def _read_all_samples(log_dir: str) -> list[dict]:
         if hasattr(log, "status") and log.status != "success":
             continue
 
-        task_name = (
-            log.eval.task if hasattr(log, "eval") and hasattr(log.eval, "task") else ""
-        )
+        task_name = log.eval.task if hasattr(log, "eval") and hasattr(log.eval, "task") else ""
         task_metadata = {}
         if hasattr(log, "eval") and hasattr(log.eval, "metadata") and log.eval.metadata:
             task_metadata = dict(log.eval.metadata)
@@ -105,7 +96,6 @@ def _read_all_samples(log_dir: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 # Build lookup tables from reader logs
 # ---------------------------------------------------------------------------
-
 
 def _build_reader_lookups(reader_records: list[dict]) -> dict:
     """Build structured lookups from reader evaluation records.
@@ -161,7 +151,6 @@ def _build_reader_lookups(reader_records: list[dict]) -> dict:
 # Foreignness score extraction (replaces surprisal for V1 regression)
 # ---------------------------------------------------------------------------
 
-
 def extract_foreignness_scores(log_dir: str = LOG_DIR_FOREIGNNESS) -> dict:
     """Read foreignness evaluation logs and build a lookup table.
 
@@ -207,12 +196,8 @@ def extract_foreignness_scores(log_dir: str = LOG_DIR_FOREIGNNESS) -> dict:
                 continue
 
             # Build lookup key from score metadata (most specific) or task metadata
-            reader_id = score_metadata.get("reader_id") or task_metadata.get(
-                "reader_id", ""
-            )
-            generator_id = score_metadata.get("generator_id") or task_metadata.get(
-                "generator_id", ""
-            )
+            reader_id = score_metadata.get("reader_id") or task_metadata.get("reader_id", "")
+            generator_id = score_metadata.get("generator_id") or task_metadata.get("generator_id", "")
             original_sample_id = score_metadata.get("original_sample_id", "")
             epoch = score_metadata.get("epoch", 0)
 
@@ -227,15 +212,40 @@ def extract_foreignness_scores(log_dir: str = LOG_DIR_FOREIGNNESS) -> dict:
 # Classification logic (SPEC 1.3)
 # ---------------------------------------------------------------------------
 
-
-def classify_cots(gen_records: list[dict], reader_records: list[dict]) -> list[dict]:
+def classify_cots(
+    gen_records: list[dict],
+    reader_records: list[dict],
+    r4_transform: str = "plain",
+) -> list[dict]:
     """Apply SPEC 1.3 classification logic.
+
+    Args:
+        gen_records: generation log records
+        reader_records: reader evaluation log records
+        r4_transform: which R4 CoT transform variant to use for
+            answer-leak detection. Options: "plain", "_mask", "_t64", "_t5p".
+            Using "_mask" removes explicit answer statements before R4 sees
+            the CoT, so R4 passing means the answer leaked through the
+            reasoning structure itself (not just a final answer statement).
 
     Returns list of classification records with:
         sample_id, epoch, generator_id, label, surprisal_R1/R2/R3,
         filter_reason (if filtered), and per-reader C2 results.
     """
-    lookups = _build_reader_lookups(reader_records)
+    # Filter reader records: for R4, keep only the selected transform variant.
+    # For other readers, keep only plain (no transform) records.
+    filtered_reader_records = []
+    for rec in reader_records:
+        rid = rec.get("reader_id", "")
+        transform = rec.get("cot_transform", "plain")
+        if rid == "R4":
+            if transform == r4_transform:
+                filtered_reader_records.append(rec)
+        else:
+            if transform == "plain":
+                filtered_reader_records.append(rec)
+
+    lookups = _build_reader_lookups(filtered_reader_records)
     results = []
 
     # Build generation lookup: (sample_id, generator_id, epoch) -> correct
@@ -255,7 +265,7 @@ def classify_cots(gen_records: list[dict], reader_records: list[dict]) -> list[d
                 sample_id, epoch = key
                 all_c2_keys.add((sample_id, gid, epoch))
 
-    for sample_id, generator_id, epoch in sorted(all_c2_keys):
+    for (sample_id, generator_id, epoch) in sorted(all_c2_keys):
         record = {
             "sample_id": sample_id,
             "generator_id": generator_id,
@@ -344,9 +354,7 @@ def classify_cots(gen_records: list[dict], reader_records: list[dict]) -> list[d
                 record["c2_results"][rid] = c2_data["correct"]
 
         record["c2_results"]["R4"] = r4_passes
-        majority_full_pass = full_reader_total > 0 and full_reader_passes > (
-            full_reader_total / 2
-        )
+        majority_full_pass = full_reader_total > 0 and full_reader_passes > (full_reader_total / 2)
 
         # Classification
         if r4_passes:
@@ -364,7 +372,6 @@ def classify_cots(gen_records: list[dict], reader_records: list[dict]) -> list[d
 # ---------------------------------------------------------------------------
 # V1: Surprisal regression
 # ---------------------------------------------------------------------------
-
 
 def run_v1_surprisal_regression(
     classifications: list[dict],
@@ -486,7 +493,6 @@ def run_v1_surprisal_regression(
 # V2: Reader agreement (Cohen's kappa)
 # ---------------------------------------------------------------------------
 
-
 def run_v2_reader_agreement(classifications: list[dict]) -> dict:
     """V2: Pairwise Cohen's kappa on C2 pass/fail across readers."""
     try:
@@ -510,14 +516,9 @@ def run_v2_reader_agreement(classifications: list[dict]) -> dict:
     for i in range(len(reader_list)):
         for j in range(i + 1, len(reader_list)):
             r1, r2 = reader_list[i], reader_list[j]
-            common_keys = set(reader_results[r1].keys()) & set(
-                reader_results[r2].keys()
-            )
+            common_keys = set(reader_results[r1].keys()) & set(reader_results[r2].keys())
             if len(common_keys) < 10:
-                kappas[f"{r1}_vs_{r2}"] = {
-                    "error": "insufficient overlap",
-                    "n": len(common_keys),
-                }
+                kappas[f"{r1}_vs_{r2}"] = {"error": "insufficient overlap", "n": len(common_keys)}
                 continue
             y1 = [reader_results[r1][k] for k in sorted(common_keys)]
             y2 = [reader_results[r2][k] for k in sorted(common_keys)]
@@ -545,7 +546,6 @@ def run_v2_reader_agreement(classifications: list[dict]) -> dict:
 # V3: Answer-leakage rate by generator
 # ---------------------------------------------------------------------------
 
-
 def run_v3_leakage_rates(classifications: list[dict]) -> dict:
     """V3: Fraction of CoTs classified as ANSWER_LEAKED per generator."""
     counts = defaultdict(lambda: defaultdict(int))
@@ -569,15 +569,9 @@ def run_v3_leakage_rates(classifications: list[dict]) -> dict:
             "illegible": counts[gid].get("ILLEGIBLE", 0),
         }
         if non_filtered > 0:
-            results[gid]["leak_rate"] = (
-                counts[gid].get("ANSWER_LEAKED", 0) / non_filtered
-            )
-            results[gid]["legible_rate"] = (
-                counts[gid].get("REASONING_LEGIBLE", 0) / non_filtered
-            )
-            results[gid]["illegible_rate"] = (
-                counts[gid].get("ILLEGIBLE", 0) / non_filtered
-            )
+            results[gid]["leak_rate"] = counts[gid].get("ANSWER_LEAKED", 0) / non_filtered
+            results[gid]["legible_rate"] = counts[gid].get("REASONING_LEGIBLE", 0) / non_filtered
+            results[gid]["illegible_rate"] = counts[gid].get("ILLEGIBLE", 0) / non_filtered
 
     return results
 
@@ -586,9 +580,17 @@ def run_v3_leakage_rates(classifications: list[dict]) -> dict:
 # Main classification pipeline
 # ---------------------------------------------------------------------------
 
+def run_classification(r4_transform: str = "_mask"):
+    """Run full classification + validation pipeline. Save results to JSON.
 
-def run_classification():
-    """Run full classification + validation pipeline. Save results to JSON."""
+    Args:
+        r4_transform: which R4 CoT transform to use for answer-leak detection.
+            "_mask" (default) masks explicit answer patterns before R4 evaluation,
+            so ANSWER_LEAKED means the answer leaked through reasoning structure.
+            "plain" uses raw CoTs (original behavior, nearly everything leaks).
+            "_t64" truncates last 64 tokens. "_t5p" truncates last 5%.
+    """
+    print(f"R4 answer-leak detector: using transform={r4_transform!r}")
     print("Reading generation logs...")
     gen_records = _read_all_samples(LOG_DIR_GENERATION)
     print(f"  Found {len(gen_records)} generation records")
@@ -598,10 +600,8 @@ def run_classification():
     print(f"  Found {len(reader_records)} reader records")
 
     print("Classifying CoTs...")
-    classifications = classify_cots(gen_records, reader_records)
-    n_classified = sum(
-        1 for r in classifications if r["label"] not in ("FILTERED", None)
-    )
+    classifications = classify_cots(gen_records, reader_records, r4_transform=r4_transform)
+    n_classified = sum(1 for r in classifications if r["label"] not in ("FILTERED", None))
     n_filtered = sum(1 for r in classifications if r["label"] == "FILTERED")
     print(f"  Classified: {n_classified}, Filtered: {n_filtered}")
 
@@ -614,9 +614,7 @@ def run_classification():
     print(f"  Found {len(foreignness_scores)} foreignness scores")
 
     print("\nRunning V1: Distributional-shift regression...")
-    v1 = run_v1_surprisal_regression(
-        classifications, foreignness_scores=foreignness_scores
-    )
+    v1 = run_v1_surprisal_regression(classifications, foreignness_scores=foreignness_scores)
     for rid, data in v1.items():
         print(f"  {rid}: {data}")
 
@@ -644,6 +642,7 @@ def run_classification():
             "classified": n_classified,
             "filtered": n_filtered,
             "label_counts": dict(label_counts),
+            "r4_transform": r4_transform,
         },
     }
 
@@ -656,4 +655,12 @@ def run_classification():
 
 
 if __name__ == "__main__":
-    run_classification()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--r4-transform", default="_mask",
+        choices=["plain", "_mask", "_t64", "_t5p"],
+        help="R4 CoT transform variant for answer-leak detection (default: _mask)",
+    )
+    args = parser.parse_args()
+    run_classification(r4_transform=args.r4_transform)

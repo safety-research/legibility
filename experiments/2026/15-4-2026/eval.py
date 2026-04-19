@@ -51,7 +51,7 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).resolve().parents[3] / ".env")
 
-from inspect_ai import Task, eval_set, task
+from inspect_ai import Task, eval, eval_set, task
 from inspect_ai.model import GenerateConfig
 
 from config import (
@@ -88,7 +88,6 @@ from scorers import (
 # ===================================================================
 # Step 1: CoT Generation tasks
 # ===================================================================
-
 
 def _cot_gen(generator_id: str, epochs: int = K_SAMPLES) -> Task:
     return Task(
@@ -128,7 +127,6 @@ def cot_gen_G3(epochs: int = K_SAMPLES) -> Task:
 # Step 2: Reader C1 tasks (self-CoT baseline)
 # ===================================================================
 
-
 def _reader_c1(reader_id: str) -> Task:
     return Task(
         dataset=build_combined_dataset(),
@@ -165,7 +163,6 @@ def reader_c1_R3() -> Task:
 # ===================================================================
 # Step 2: Reader C4 tasks (no-CoT baseline)
 # ===================================================================
-
 
 def _reader_c4(reader_id: str) -> Task:
     return Task(
@@ -207,16 +204,13 @@ def reader_c4_R3() -> Task:
 # Step 1 must be complete before running these.
 # ===================================================================
 
-
 def _load_cots() -> dict:
     """Load CoTs from Step 1 logs. Exits if none found."""
     cots = extract_cots_from_logs(LOG_DIR_GENERATION)
     if not cots:
         print(f"ERROR: No CoTs found in {LOG_DIR_GENERATION}. Run Step 1 first.")
-        print(
-            "  inspect eval-set eval.py@cot_gen_G1 eval.py@cot_gen_G2 eval.py@cot_gen_G3 "
-            f"--log-dir {LOG_DIR_GENERATION}"
-        )
+        print("  inspect eval-set eval.py@cot_gen_G1 eval.py@cot_gen_G2 eval.py@cot_gen_G3 "
+              f"--log-dir {LOG_DIR_GENERATION}")
         sys.exit(1)
     return cots
 
@@ -228,9 +222,7 @@ def _reader_c2(
     name_suffix: str = "",
 ) -> Task:
     cots = _load_cots()
-    dataset = build_c2_dataset(
-        cots, reader_id, generator_id, cot_transform=cot_transform
-    )
+    dataset = build_c2_dataset(cots, reader_id, generator_id, cot_transform=cot_transform)
     task_name = f"reader_c2_{reader_id}{name_suffix}_{generator_id}"
     return Task(
         dataset=dataset,
@@ -254,7 +246,6 @@ def _reader_c2(
 
 # --- R1 x generators ---
 
-
 @task
 def reader_c2_R1_G1() -> Task:
     """C2: R1 reads G1's CoT."""
@@ -274,7 +265,6 @@ def reader_c2_R1_G3() -> Task:
 
 
 # --- R2 x generators ---
-
 
 @task
 def reader_c2_R2_G1() -> Task:
@@ -296,7 +286,6 @@ def reader_c2_R2_G3() -> Task:
 
 # --- R3 x generators ---
 
-
 @task
 def reader_c2_R3_G1() -> Task:
     """C2: R3 reads G1's CoT."""
@@ -316,7 +305,6 @@ def reader_c2_R3_G3() -> Task:
 
 
 # --- R4 x generators (leak detector, C2 only) ---
-
 
 @task
 def reader_c2_R4_G1() -> Task:
@@ -338,33 +326,25 @@ def reader_c2_R4_G3() -> Task:
 
 # --- R4 truncated variants (truncate last 64 tokens) ---
 
-
 @task
 def reader_c2_R4_t64_G1() -> Task:
     """C2: R4 reads G1's CoT truncated (last 64 tokens removed)."""
-    return _reader_c2(
-        "R4", "G1", cot_transform=truncate_last_n_tokens, name_suffix="_t64"
-    )
+    return _reader_c2("R4", "G1", cot_transform=truncate_last_n_tokens, name_suffix="_t64")
 
 
 @task
 def reader_c2_R4_t64_G2() -> Task:
     """C2: R4 reads G2's CoT truncated (last 64 tokens removed)."""
-    return _reader_c2(
-        "R4", "G2", cot_transform=truncate_last_n_tokens, name_suffix="_t64"
-    )
+    return _reader_c2("R4", "G2", cot_transform=truncate_last_n_tokens, name_suffix="_t64")
 
 
 @task
 def reader_c2_R4_t64_G3() -> Task:
     """C2: R4 reads G3's CoT truncated (last 64 tokens removed)."""
-    return _reader_c2(
-        "R4", "G3", cot_transform=truncate_last_n_tokens, name_suffix="_t64"
-    )
+    return _reader_c2("R4", "G3", cot_transform=truncate_last_n_tokens, name_suffix="_t64")
 
 
 # --- R4 truncated variants (truncate last 5% of characters) ---
-
 
 @task
 def reader_c2_R4_t5p_G1() -> Task:
@@ -386,35 +366,27 @@ def reader_c2_R4_t5p_G3() -> Task:
 
 # --- R4 masked variants (answer-leaking patterns replaced with pad token) ---
 
-
 @task
 def reader_c2_R4_mask_G1() -> Task:
     """C2: R4 reads G1's CoT with answer-leaking patterns masked."""
-    return _reader_c2(
-        "R4", "G1", cot_transform=make_mask_transform("R4"), name_suffix="_mask"
-    )
+    return _reader_c2("R4", "G1", cot_transform=make_mask_transform("R4"), name_suffix="_mask")
 
 
 @task
 def reader_c2_R4_mask_G2() -> Task:
     """C2: R4 reads G2's CoT with answer-leaking patterns masked."""
-    return _reader_c2(
-        "R4", "G2", cot_transform=make_mask_transform("R4"), name_suffix="_mask"
-    )
+    return _reader_c2("R4", "G2", cot_transform=make_mask_transform("R4"), name_suffix="_mask")
 
 
 @task
 def reader_c2_R4_mask_G3() -> Task:
     """C2: R4 reads G3's CoT with answer-leaking patterns masked."""
-    return _reader_c2(
-        "R4", "G3", cot_transform=make_mask_transform("R4"), name_suffix="_mask"
-    )
+    return _reader_c2("R4", "G3", cot_transform=make_mask_transform("R4"), name_suffix="_mask")
 
 
 # ===================================================================
 # Python pipeline orchestration (for `python eval.py` usage)
 # ===================================================================
-
 
 def run_step1(max_samples: int | None = None, epochs: int = K_SAMPLES):
     """Step 1: Generate CoTs from all generators."""
@@ -456,23 +428,13 @@ def run_step2(max_samples: int | None = None):
         tasks.append(_reader_c2("R4", gid))
     # C2: R4 x generators (truncated — last 64 tokens)
     for gid in ["G1", "G2", "G3"]:
-        tasks.append(
-            _reader_c2(
-                "R4", gid, cot_transform=truncate_last_n_tokens, name_suffix="_t64"
-            )
-        )
+        tasks.append(_reader_c2("R4", gid, cot_transform=truncate_last_n_tokens, name_suffix="_t64"))
     # C2: R4 x generators (truncated — last 5% chars)
     for gid in ["G1", "G2", "G3"]:
-        tasks.append(
-            _reader_c2("R4", gid, cot_transform=truncate_last_pct, name_suffix="_t5p")
-        )
+        tasks.append(_reader_c2("R4", gid, cot_transform=truncate_last_pct, name_suffix="_t5p"))
     # C2: R4 x generators (masked — answer-leaking patterns replaced with pad token)
     for gid in ["G1", "G2", "G3"]:
-        tasks.append(
-            _reader_c2(
-                "R4", gid, cot_transform=make_mask_transform("R4"), name_suffix="_mask"
-            )
-        )
+        tasks.append(_reader_c2("R4", gid, cot_transform=make_mask_transform("R4"), name_suffix="_mask"))
 
     print(f"Step 2: Running {len(tasks)} reader tasks")
     success, logs = eval_set(
@@ -503,28 +465,16 @@ def run_pipeline(max_samples: int | None = None, epochs: int = K_SAMPLES):
 # CLI entry point
 # ===================================================================
 
-
 def main():
     parser = argparse.ArgumentParser(description="CoT Legibility Phase 1")
-    parser.add_argument(
-        "--step",
-        type=int,
-        choices=[1, 2],
-        default=None,
-        help="Run only step 1 (generation) or step 2 (readers)",
-    )
-    parser.add_argument(
-        "--test", action="store_true", help="Quick test: 5 samples, 1 epoch"
-    )
-    parser.add_argument(
-        "--max-samples", type=int, default=None, help="Max samples per task"
-    )
-    parser.add_argument(
-        "--epochs",
-        type=int,
-        default=K_SAMPLES,
-        help="Number of epochs for CoT generation",
-    )
+    parser.add_argument("--step", type=int, choices=[1, 2], default=None,
+                        help="Run only step 1 (generation) or step 2 (readers)")
+    parser.add_argument("--test", action="store_true",
+                        help="Quick test: 5 samples, 1 epoch")
+    parser.add_argument("--max-samples", type=int, default=None,
+                        help="Max samples per task")
+    parser.add_argument("--epochs", type=int, default=K_SAMPLES,
+                        help="Number of epochs for CoT generation")
     args = parser.parse_args()
 
     if args.test:

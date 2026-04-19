@@ -6,7 +6,6 @@ from collections.abc import Callable
 from pathlib import Path
 
 import datasets as hf_datasets
-
 load_dataset = hf_datasets.load_dataset
 from inspect_ai.dataset import MemoryDataset, Sample
 from inspect_ai.log import read_eval_log, list_eval_logs
@@ -24,7 +23,6 @@ from config import (
 # ---------------------------------------------------------------------------
 # Answer extraction helpers (reused from 13-4-2026/lib/data.py patterns)
 # ---------------------------------------------------------------------------
-
 
 def extract_mc_answer(text: str) -> str | None:
     """Extract a multiple-choice answer letter (A-E) from model output."""
@@ -62,7 +60,7 @@ def _extract_boxed(text: str) -> str | None:
             depth -= 1
         i += 1
     if depth == 0:
-        return text[start : i - 1].strip()
+        return text[start:i - 1].strip()
     return None
 
 
@@ -119,7 +117,6 @@ def check_math_equivalence(predicted: str | None, target: str | None) -> bool:
 # CoT truncation transforms (for R4 leak detection)
 # ---------------------------------------------------------------------------
 
-
 def truncate_last_n_tokens(text: str, n: int = 64) -> str:
     """Remove the last n whitespace-delimited tokens."""
     tokens = text.split()
@@ -142,10 +139,10 @@ def truncate_last_pct(text: str, pct: float = 0.05) -> str:
 
 # Pad tokens per reader model family
 READER_PAD_TOKENS: dict[str, str] = {
-    "R1": "<|endoftext|>",  # Qwen3
-    "R2": "<|finetune_right_pad_id|>",  # Llama-3.1
+    "R1": "<|endoftext|>",             # Qwen3
+    "R2": "<|finetune_right_pad_id|>", # Llama-3.1
     "R3": "<\uff5cend\u2581of\u2581sentence\uff5c>",  # DeepSeek-V3: <｜end▁of▁sentence｜>
-    "R4": "<pad>",  # Gemma-3
+    "R4": "<pad>",                     # Gemma-3
 }
 
 # Regex patterns that directly convey the answer in a CoT.
@@ -171,22 +168,16 @@ ANSWER_LEAK_PATTERNS: list[re.Pattern] = [
         r"(?:is|=)\s*\S+"
     ),
     # "Therefore, A." / "Therefore, B" (bare conclusion with MC letter)
-    re.compile(
-        r"(?:[Ss]o|[Tt]herefore|[Tt]hus|[Hh]ence)\s*,?\s+([A-E])\.?\s*$", re.MULTILINE
-    ),
+    re.compile(r"(?:[Ss]o|[Tt]herefore|[Tt]hus|[Hh]ence)\s*,?\s+([A-E])\.?\s*$", re.MULTILINE),
     # "corresponds/matches to option X" / "closest option is X"
     re.compile(
         r"(?:correspond(?:s|ing)\s+to|match(?:es)?\s+(?:the\s+)?(?:description\s+in\s+)?|"
         r"closest\s+(?:option|answer)\s+(?:is|to))\s*(?:\*\*)?(?:[Oo]ption\s+)?[A-E]"
     ),
     # "Option X is correct" / "option X"
-    re.compile(
-        r"(?:[Oo]ption|[Cc]hoice)\s+(?:\*\*)?[A-E](?:\*\*)?\s+(?:is\s+)?(?:correct|right|the answer)"
-    ),
+    re.compile(r"(?:[Oo]ption|[Cc]hoice)\s+(?:\*\*)?[A-E](?:\*\*)?\s+(?:is\s+)?(?:correct|right|the answer)"),
     # "I'll go with X" / "I will go with X" / "I choose X" / "my answer is X"
-    re.compile(
-        r"(?:I'?ll go with|I will go with|I choose|I select|[Mm]y answer is)\s+\S+"
-    ),
+    re.compile(r"(?:I'?ll go with|I will go with|I choose|I select|[Mm]y answer is)\s+\S+"),
     # "the answer is X" (short form, end of line)
     re.compile(r"[Tt]he answer is\s*:?\s*\S+\s*$", re.MULTILINE),
 ]
@@ -222,7 +213,6 @@ def make_mask_transform(reader_id: str) -> Callable[[str], str]:
 # ---------------------------------------------------------------------------
 # CoT text extraction and cleaning
 # ---------------------------------------------------------------------------
-
 
 def extract_think_block(text: str) -> str:
     """Extract content from <think>...</think> blocks.
@@ -298,7 +288,6 @@ def strip_final_answer(text: str) -> str:
 # GPQA-Diamond loader
 # ---------------------------------------------------------------------------
 
-
 def _letter_from_index(idx: int) -> str:
     return chr(ord("A") + idx)
 
@@ -327,25 +316,22 @@ def load_gpqa_diamond() -> list[Sample]:
         )
         full_input = f"{question}\n\n{choice_text}"
 
-        samples.append(
-            Sample(
-                input=full_input,
-                target=correct_letter,
-                id=f"gpqa_{i}",
-                metadata={
-                    "dataset": "gpqa_diamond",
-                    "task_type": "multiple_choice",
-                    "question_idx": i,
-                },
-            )
-        )
+        samples.append(Sample(
+            input=full_input,
+            target=correct_letter,
+            id=f"gpqa_{i}",
+            metadata={
+                "dataset": "gpqa_diamond",
+                "task_type": "multiple_choice",
+                "question_idx": i,
+            },
+        ))
     return samples
 
 
 # ---------------------------------------------------------------------------
 # MATH-500 loader (Level 3-5)
 # ---------------------------------------------------------------------------
-
 
 def load_math500() -> list[Sample]:
     """Load MATH-500 test split, filtered to Level 3-5.
@@ -370,20 +356,18 @@ def load_math500() -> list[Sample]:
             gold = extract_gold_math_answer(row.get("solution", ""))
         if not gold:
             continue
-        samples.append(
-            Sample(
-                input=row["problem"],
-                target=gold,
-                id=f"math_{idx}",
-                metadata={
-                    "dataset": "math500",
-                    "task_type": "open_ended_math",
-                    "level": level,
-                    "math_subject": row.get("subject", ""),
-                    "question_idx": idx,
-                },
-            )
-        )
+        samples.append(Sample(
+            input=row["problem"],
+            target=gold,
+            id=f"math_{idx}",
+            metadata={
+                "dataset": "math500",
+                "task_type": "open_ended_math",
+                "level": level,
+                "math_subject": row.get("subject", ""),
+                "question_idx": idx,
+            },
+        ))
         idx += 1
     return samples
 
@@ -408,7 +392,6 @@ def build_combined_dataset() -> MemoryDataset:
 # ---------------------------------------------------------------------------
 # CoT extraction from Step 1 logs (bridges Step 1 -> Step 2)
 # ---------------------------------------------------------------------------
-
 
 def _get_completion_text(sample) -> str:
     """Extract full completion text from a logged sample."""
@@ -507,17 +490,11 @@ def extract_cots_from_logs(log_dir: str) -> dict:
 
             input_text = ""
             if hasattr(sample, "input"):
-                input_text = (
-                    sample.input if isinstance(sample.input, str) else str(sample.input)
-                )
+                input_text = sample.input if isinstance(sample.input, str) else str(sample.input)
 
             target_text = ""
             if hasattr(sample, "target"):
-                target_text = (
-                    sample.target
-                    if isinstance(sample.target, str)
-                    else str(sample.target)
-                )
+                target_text = sample.target if isinstance(sample.target, str) else str(sample.target)
 
             metadata = {}
             if hasattr(sample, "metadata") and sample.metadata:
@@ -574,14 +551,12 @@ def build_c2_dataset(
         metadata["epoch"] = epoch
         metadata["original_sample_id"] = sample_id
 
-        samples.append(
-            Sample(
-                input=cot_data["input"],
-                target=cot_data["target"],
-                id=f"{sample_id}__{generator_id}__e{epoch}",
-                metadata=metadata,
-            )
-        )
+        samples.append(Sample(
+            input=cot_data["input"],
+            target=cot_data["target"],
+            id=f"{sample_id}__{generator_id}__e{epoch}",
+            metadata=metadata,
+        ))
 
     return MemoryDataset(
         samples=samples,
