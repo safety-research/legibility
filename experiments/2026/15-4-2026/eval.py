@@ -20,17 +20,17 @@ Step 2 — Reader evaluation (run after Step 1):
     inspect eval-set eval.py@reader_c2_R4_G1 eval.py@reader_c2_R4_G2 eval.py@reader_c2_R4_G3 \
         --log-dir logs/step2_readers
 
-    # C2 crossfill (R4 leak detector — truncated last 64 tokens)
-    inspect eval-set eval.py@reader_c2_R4_t64_G1 eval.py@reader_c2_R4_t64_G2 eval.py@reader_c2_R4_t64_G3 \
-        --log-dir logs/step2_readers
+    # C2 crossfill (ALL readers — truncated last 64 tokens)
+    inspect eval-set eval.py@reader_c2_R{1,2,3,4}_t64_G{1,2,3} --log-dir logs/step2_readers
 
-    # C2 crossfill (R4 leak detector — truncated last 5% chars)
-    inspect eval-set eval.py@reader_c2_R4_t5p_G1 eval.py@reader_c2_R4_t5p_G2 eval.py@reader_c2_R4_t5p_G3 \
-        --log-dir logs/step2_readers
+    # C2 crossfill (ALL readers — truncated last 5% chars)
+    inspect eval-set eval.py@reader_c2_R{1,2,3,4}_t5p_G{1,2,3} --log-dir logs/step2_readers
 
-    # C2 crossfill (R4 leak detector — answer patterns masked with pad token)
-    inspect eval-set eval.py@reader_c2_R4_mask_G1 eval.py@reader_c2_R4_mask_G2 eval.py@reader_c2_R4_mask_G3 \
-        --log-dir logs/step2_readers
+    # C2 crossfill (ALL readers — answer patterns masked with pad token)
+    inspect eval-set eval.py@reader_c2_R{1,2,3,4}_mask_G{1,2,3} --log-dir logs/step2_readers
+
+    # C2 crossfill (ALL readers — truncated at first answer-leak)
+    inspect eval-set eval.py@reader_c2_R{1,2,3,4}_tleak_G{1,2,3} --log-dir logs/step2_readers
 
 Individual tasks:
     inspect eval eval.py@cot_gen_G1 --max-samples 5 --epochs 1
@@ -72,6 +72,7 @@ from data import (
     truncate_last_n_tokens,
     truncate_last_pct,
     make_mask_transform,
+    truncate_at_first_leak,
 )
 from solvers import (
     cot_generation_solver,
@@ -167,7 +168,7 @@ def reader_c1_R3() -> Task:
 def _reader_c4(reader_id: str) -> Task:
     return Task(
         dataset=build_combined_dataset(),
-        solver=no_cot_solver(),
+        solver=no_cot_solver(reader_id=reader_id),
         scorer=reader_correctness_scorer(),
         model=READERS[reader_id],
         config=GenerateConfig(
@@ -226,7 +227,7 @@ def _reader_c2(
     task_name = f"reader_c2_{reader_id}{name_suffix}_{generator_id}"
     return Task(
         dataset=dataset,
-        solver=crossfill_solver(),
+        solver=crossfill_solver(reader_id=reader_id),
         scorer=reader_correctness_scorer(),
         model=READERS[reader_id],
         config=GenerateConfig(
@@ -324,7 +325,61 @@ def reader_c2_R4_G3() -> Task:
     return _reader_c2("R4", "G3")
 
 
-# --- R4 truncated variants (truncate last 64 tokens) ---
+# --- ALL readers: truncated last 64 tokens ---
+
+@task
+def reader_c2_R1_t64_G1() -> Task:
+    """C2: R1 reads G1's CoT truncated (last 64 tokens removed)."""
+    return _reader_c2("R1", "G1", cot_transform=truncate_last_n_tokens, name_suffix="_t64")
+
+
+@task
+def reader_c2_R1_t64_G2() -> Task:
+    """C2: R1 reads G2's CoT truncated (last 64 tokens removed)."""
+    return _reader_c2("R1", "G2", cot_transform=truncate_last_n_tokens, name_suffix="_t64")
+
+
+@task
+def reader_c2_R1_t64_G3() -> Task:
+    """C2: R1 reads G3's CoT truncated (last 64 tokens removed)."""
+    return _reader_c2("R1", "G3", cot_transform=truncate_last_n_tokens, name_suffix="_t64")
+
+
+@task
+def reader_c2_R2_t64_G1() -> Task:
+    """C2: R2 reads G1's CoT truncated (last 64 tokens removed)."""
+    return _reader_c2("R2", "G1", cot_transform=truncate_last_n_tokens, name_suffix="_t64")
+
+
+@task
+def reader_c2_R2_t64_G2() -> Task:
+    """C2: R2 reads G2's CoT truncated (last 64 tokens removed)."""
+    return _reader_c2("R2", "G2", cot_transform=truncate_last_n_tokens, name_suffix="_t64")
+
+
+@task
+def reader_c2_R2_t64_G3() -> Task:
+    """C2: R2 reads G3's CoT truncated (last 64 tokens removed)."""
+    return _reader_c2("R2", "G3", cot_transform=truncate_last_n_tokens, name_suffix="_t64")
+
+
+@task
+def reader_c2_R3_t64_G1() -> Task:
+    """C2: R3 reads G1's CoT truncated (last 64 tokens removed)."""
+    return _reader_c2("R3", "G1", cot_transform=truncate_last_n_tokens, name_suffix="_t64")
+
+
+@task
+def reader_c2_R3_t64_G2() -> Task:
+    """C2: R3 reads G2's CoT truncated (last 64 tokens removed)."""
+    return _reader_c2("R3", "G2", cot_transform=truncate_last_n_tokens, name_suffix="_t64")
+
+
+@task
+def reader_c2_R3_t64_G3() -> Task:
+    """C2: R3 reads G3's CoT truncated (last 64 tokens removed)."""
+    return _reader_c2("R3", "G3", cot_transform=truncate_last_n_tokens, name_suffix="_t64")
+
 
 @task
 def reader_c2_R4_t64_G1() -> Task:
@@ -344,7 +399,61 @@ def reader_c2_R4_t64_G3() -> Task:
     return _reader_c2("R4", "G3", cot_transform=truncate_last_n_tokens, name_suffix="_t64")
 
 
-# --- R4 truncated variants (truncate last 5% of characters) ---
+# --- ALL readers: truncated last 5% of characters ---
+
+@task
+def reader_c2_R1_t5p_G1() -> Task:
+    """C2: R1 reads G1's CoT truncated (last 5% of chars removed)."""
+    return _reader_c2("R1", "G1", cot_transform=truncate_last_pct, name_suffix="_t5p")
+
+
+@task
+def reader_c2_R1_t5p_G2() -> Task:
+    """C2: R1 reads G2's CoT truncated (last 5% of chars removed)."""
+    return _reader_c2("R1", "G2", cot_transform=truncate_last_pct, name_suffix="_t5p")
+
+
+@task
+def reader_c2_R1_t5p_G3() -> Task:
+    """C2: R1 reads G3's CoT truncated (last 5% of chars removed)."""
+    return _reader_c2("R1", "G3", cot_transform=truncate_last_pct, name_suffix="_t5p")
+
+
+@task
+def reader_c2_R2_t5p_G1() -> Task:
+    """C2: R2 reads G1's CoT truncated (last 5% of chars removed)."""
+    return _reader_c2("R2", "G1", cot_transform=truncate_last_pct, name_suffix="_t5p")
+
+
+@task
+def reader_c2_R2_t5p_G2() -> Task:
+    """C2: R2 reads G2's CoT truncated (last 5% of chars removed)."""
+    return _reader_c2("R2", "G2", cot_transform=truncate_last_pct, name_suffix="_t5p")
+
+
+@task
+def reader_c2_R2_t5p_G3() -> Task:
+    """C2: R2 reads G3's CoT truncated (last 5% of chars removed)."""
+    return _reader_c2("R2", "G3", cot_transform=truncate_last_pct, name_suffix="_t5p")
+
+
+@task
+def reader_c2_R3_t5p_G1() -> Task:
+    """C2: R3 reads G1's CoT truncated (last 5% of chars removed)."""
+    return _reader_c2("R3", "G1", cot_transform=truncate_last_pct, name_suffix="_t5p")
+
+
+@task
+def reader_c2_R3_t5p_G2() -> Task:
+    """C2: R3 reads G2's CoT truncated (last 5% of chars removed)."""
+    return _reader_c2("R3", "G2", cot_transform=truncate_last_pct, name_suffix="_t5p")
+
+
+@task
+def reader_c2_R3_t5p_G3() -> Task:
+    """C2: R3 reads G3's CoT truncated (last 5% of chars removed)."""
+    return _reader_c2("R3", "G3", cot_transform=truncate_last_pct, name_suffix="_t5p")
+
 
 @task
 def reader_c2_R4_t5p_G1() -> Task:
@@ -364,7 +473,61 @@ def reader_c2_R4_t5p_G3() -> Task:
     return _reader_c2("R4", "G3", cot_transform=truncate_last_pct, name_suffix="_t5p")
 
 
-# --- R4 masked variants (answer-leaking patterns replaced with pad token) ---
+# --- ALL readers: answer-leaking patterns masked with pad token ---
+
+@task
+def reader_c2_R1_mask_G1() -> Task:
+    """C2: R1 reads G1's CoT with answer-leaking patterns masked."""
+    return _reader_c2("R1", "G1", cot_transform=make_mask_transform("R1"), name_suffix="_mask")
+
+
+@task
+def reader_c2_R1_mask_G2() -> Task:
+    """C2: R1 reads G2's CoT with answer-leaking patterns masked."""
+    return _reader_c2("R1", "G2", cot_transform=make_mask_transform("R1"), name_suffix="_mask")
+
+
+@task
+def reader_c2_R1_mask_G3() -> Task:
+    """C2: R1 reads G3's CoT with answer-leaking patterns masked."""
+    return _reader_c2("R1", "G3", cot_transform=make_mask_transform("R1"), name_suffix="_mask")
+
+
+@task
+def reader_c2_R2_mask_G1() -> Task:
+    """C2: R2 reads G1's CoT with answer-leaking patterns masked."""
+    return _reader_c2("R2", "G1", cot_transform=make_mask_transform("R2"), name_suffix="_mask")
+
+
+@task
+def reader_c2_R2_mask_G2() -> Task:
+    """C2: R2 reads G2's CoT with answer-leaking patterns masked."""
+    return _reader_c2("R2", "G2", cot_transform=make_mask_transform("R2"), name_suffix="_mask")
+
+
+@task
+def reader_c2_R2_mask_G3() -> Task:
+    """C2: R2 reads G3's CoT with answer-leaking patterns masked."""
+    return _reader_c2("R2", "G3", cot_transform=make_mask_transform("R2"), name_suffix="_mask")
+
+
+@task
+def reader_c2_R3_mask_G1() -> Task:
+    """C2: R3 reads G1's CoT with answer-leaking patterns masked."""
+    return _reader_c2("R3", "G1", cot_transform=make_mask_transform("R3"), name_suffix="_mask")
+
+
+@task
+def reader_c2_R3_mask_G2() -> Task:
+    """C2: R3 reads G2's CoT with answer-leaking patterns masked."""
+    return _reader_c2("R3", "G2", cot_transform=make_mask_transform("R3"), name_suffix="_mask")
+
+
+@task
+def reader_c2_R3_mask_G3() -> Task:
+    """C2: R3 reads G3's CoT with answer-leaking patterns masked."""
+    return _reader_c2("R3", "G3", cot_transform=make_mask_transform("R3"), name_suffix="_mask")
+
 
 @task
 def reader_c2_R4_mask_G1() -> Task:
@@ -382,6 +545,80 @@ def reader_c2_R4_mask_G2() -> Task:
 def reader_c2_R4_mask_G3() -> Task:
     """C2: R4 reads G3's CoT with answer-leaking patterns masked."""
     return _reader_c2("R4", "G3", cot_transform=make_mask_transform("R4"), name_suffix="_mask")
+
+
+# --- ALL readers x generators: truncated at first answer-leak ---
+
+@task
+def reader_c2_R1_tleak_G1() -> Task:
+    """C2: R1 reads G1's CoT truncated at first answer-leak."""
+    return _reader_c2("R1", "G1", cot_transform=truncate_at_first_leak, name_suffix="_tleak")
+
+
+@task
+def reader_c2_R1_tleak_G2() -> Task:
+    """C2: R1 reads G2's CoT truncated at first answer-leak."""
+    return _reader_c2("R1", "G2", cot_transform=truncate_at_first_leak, name_suffix="_tleak")
+
+
+@task
+def reader_c2_R1_tleak_G3() -> Task:
+    """C2: R1 reads G3's CoT truncated at first answer-leak."""
+    return _reader_c2("R1", "G3", cot_transform=truncate_at_first_leak, name_suffix="_tleak")
+
+
+@task
+def reader_c2_R2_tleak_G1() -> Task:
+    """C2: R2 reads G1's CoT truncated at first answer-leak."""
+    return _reader_c2("R2", "G1", cot_transform=truncate_at_first_leak, name_suffix="_tleak")
+
+
+@task
+def reader_c2_R2_tleak_G2() -> Task:
+    """C2: R2 reads G2's CoT truncated at first answer-leak."""
+    return _reader_c2("R2", "G2", cot_transform=truncate_at_first_leak, name_suffix="_tleak")
+
+
+@task
+def reader_c2_R2_tleak_G3() -> Task:
+    """C2: R2 reads G3's CoT truncated at first answer-leak."""
+    return _reader_c2("R2", "G3", cot_transform=truncate_at_first_leak, name_suffix="_tleak")
+
+
+@task
+def reader_c2_R3_tleak_G1() -> Task:
+    """C2: R3 reads G1's CoT truncated at first answer-leak."""
+    return _reader_c2("R3", "G1", cot_transform=truncate_at_first_leak, name_suffix="_tleak")
+
+
+@task
+def reader_c2_R3_tleak_G2() -> Task:
+    """C2: R3 reads G2's CoT truncated at first answer-leak."""
+    return _reader_c2("R3", "G2", cot_transform=truncate_at_first_leak, name_suffix="_tleak")
+
+
+@task
+def reader_c2_R3_tleak_G3() -> Task:
+    """C2: R3 reads G3's CoT truncated at first answer-leak."""
+    return _reader_c2("R3", "G3", cot_transform=truncate_at_first_leak, name_suffix="_tleak")
+
+
+@task
+def reader_c2_R4_tleak_G1() -> Task:
+    """C2: R4 reads G1's CoT truncated at first answer-leak."""
+    return _reader_c2("R4", "G1", cot_transform=truncate_at_first_leak, name_suffix="_tleak")
+
+
+@task
+def reader_c2_R4_tleak_G2() -> Task:
+    """C2: R4 reads G2's CoT truncated at first answer-leak."""
+    return _reader_c2("R4", "G2", cot_transform=truncate_at_first_leak, name_suffix="_tleak")
+
+
+@task
+def reader_c2_R4_tleak_G3() -> Task:
+    """C2: R4 reads G3's CoT truncated at first answer-leak."""
+    return _reader_c2("R4", "G3", cot_transform=truncate_at_first_leak, name_suffix="_tleak")
 
 
 # ===================================================================
@@ -426,15 +663,23 @@ def run_step2(max_samples: int | None = None):
     # C2: R4 x generators (canonical, un-truncated)
     for gid in ["G1", "G2", "G3"]:
         tasks.append(_reader_c2("R4", gid))
-    # C2: R4 x generators (truncated — last 64 tokens)
-    for gid in ["G1", "G2", "G3"]:
-        tasks.append(_reader_c2("R4", gid, cot_transform=truncate_last_n_tokens, name_suffix="_t64"))
-    # C2: R4 x generators (truncated — last 5% chars)
-    for gid in ["G1", "G2", "G3"]:
-        tasks.append(_reader_c2("R4", gid, cot_transform=truncate_last_pct, name_suffix="_t5p"))
-    # C2: R4 x generators (masked — answer-leaking patterns replaced with pad token)
-    for gid in ["G1", "G2", "G3"]:
-        tasks.append(_reader_c2("R4", gid, cot_transform=make_mask_transform("R4"), name_suffix="_mask"))
+    # C2: ALL readers x generators (truncated — last 64 tokens)
+    for rid in FULL_READERS + ["R4"]:
+        for gid in ["G1", "G2", "G3"]:
+            tasks.append(_reader_c2(rid, gid, cot_transform=truncate_last_n_tokens, name_suffix="_t64"))
+    # C2: ALL readers x generators (truncated — last 5% chars)
+    for rid in FULL_READERS + ["R4"]:
+        for gid in ["G1", "G2", "G3"]:
+            tasks.append(_reader_c2(rid, gid, cot_transform=truncate_last_pct, name_suffix="_t5p"))
+    # C2: ALL readers x generators (masked — answer-leaking patterns replaced with pad token)
+    for rid in FULL_READERS + ["R4"]:
+        for gid in ["G1", "G2", "G3"]:
+            tasks.append(_reader_c2(rid, gid, cot_transform=make_mask_transform(rid), name_suffix="_mask"))
+    # C2: ALL readers x generators (truncated at first answer-leak)
+    for rid in FULL_READERS + ["R4"]:
+        for gid in ["G1", "G2", "G3"]:
+            tasks.append(_reader_c2(rid, gid,
+                cot_transform=truncate_at_first_leak, name_suffix="_tleak"))
 
     print(f"Step 2: Running {len(tasks)} reader tasks")
     success, logs = eval_set(

@@ -17,6 +17,9 @@ from config import (
     MATH_DATASET,
     MATH_MIN_LEVEL,
     MATH_MAX_LEVEL,
+    BBH_DATASET,
+    BBH_TASKS,
+    BBH_SAMPLES_PER_TASK,
 )
 
 
@@ -25,21 +28,21 @@ from config import (
 # ---------------------------------------------------------------------------
 
 def extract_mc_answer(text: str) -> str | None:
-    """Extract a multiple-choice answer letter (A-E) from model output."""
+    """Extract a multiple-choice answer letter (A-G) from model output."""
     if not text:
         return None
     # Pattern 1: "The answer is: X" or "The answer is (X)"
-    match = re.search(r"[Tt]he answer is:?\s*\(?([A-E])\)?", text)
+    match = re.search(r"[Tt]he answer is:?\s*\(?([A-G])\)?", text)
     if match:
         return match.group(1)
     # Pattern 2: \boxed{X} or \boxed{(X)}
-    match = re.search(r"\\boxed\{?\(?([A-E])\)?\}?", text)
+    match = re.search(r"\\boxed\{?\(?([A-G])\)?\}?", text)
     if match:
         return match.group(1)
     # Pattern 3: Standalone letter at end of text (last 50 chars only to avoid
     # false positives from letters used as variables in scientific text)
     tail = text[-50:] if len(text) > 50 else text
-    match = re.search(r"\b([A-E])\b", tail)
+    match = re.search(r"\b([A-G])\b", tail)
     if match:
         return match.group(1)
     return None
@@ -168,14 +171,14 @@ ANSWER_LEAK_PATTERNS: list[re.Pattern] = [
         r"(?:is|=)\s*\S+"
     ),
     # "Therefore, A." / "Therefore, B" (bare conclusion with MC letter)
-    re.compile(r"(?:[Ss]o|[Tt]herefore|[Tt]hus|[Hh]ence)\s*,?\s+([A-E])\.?\s*$", re.MULTILINE),
+    re.compile(r"(?:[Ss]o|[Tt]herefore|[Tt]hus|[Hh]ence)\s*,?\s+([A-G])\.?\s*$", re.MULTILINE),
     # "corresponds/matches to option X" / "closest option is X"
     re.compile(
         r"(?:correspond(?:s|ing)\s+to|match(?:es)?\s+(?:the\s+)?(?:description\s+in\s+)?|"
-        r"closest\s+(?:option|answer)\s+(?:is|to))\s*(?:\*\*)?(?:[Oo]ption\s+)?[A-E]"
+        r"closest\s+(?:option|answer)\s+(?:is|to))\s*(?:\*\*)?(?:[Oo]ption\s+)?[A-G]"
     ),
     # "Option X is correct" / "option X"
-    re.compile(r"(?:[Oo]ption|[Cc]hoice)\s+(?:\*\*)?[A-E](?:\*\*)?\s+(?:is\s+)?(?:correct|right|the answer)"),
+    re.compile(r"(?:[Oo]ption|[Cc]hoice)\s+(?:\*\*)?[A-G](?:\*\*)?\s+(?:is\s+)?(?:correct|right|the answer)"),
     # "I'll go with X" / "I will go with X" / "I choose X" / "my answer is X"
     re.compile(r"(?:I'?ll go with|I will go with|I choose|I select|[Mm]y answer is)\s+\S+"),
     # "the answer is X" (short form, end of line)
@@ -208,6 +211,23 @@ def make_mask_transform(reader_id: str) -> Callable[[str], str]:
         return mask_answer_leaks(text, pad_token)
 
     return transform
+
+
+def truncate_at_first_leak(text: str) -> str:
+    """Truncate CoT at the earliest answer-leaking pattern match.
+
+    Returns text unchanged if no leak pattern found.
+    """
+    if not text:
+        return ""
+    earliest_pos = len(text)
+    for pattern in ANSWER_LEAK_PATTERNS:
+        match = pattern.search(text)
+        if match and match.start() < earliest_pos:
+            earliest_pos = match.start()
+    if earliest_pos == len(text):
+        return text  # no leak found
+    return text[:earliest_pos].rstrip()
 
 
 # ---------------------------------------------------------------------------
@@ -373,6 +393,49 @@ def load_math500() -> list[Sample]:
 
 
 # ---------------------------------------------------------------------------
+# BBH (BIG-Bench Hard) loader
+# ---------------------------------------------------------------------------
+
+def load_bbh() -> list[Sample]:
+    """Load selected BBH subtasks as Inspect Samples (multiple-choice).
+
+    Loads 6 MC subtasks from lukaemon/bbh, deterministically samples
+    BBH_SAMPLES_PER_TASK from each, yielding ~210 samples total.
+    """
+    samples = []
+    global_idx = 0
+    for task_name in BBH_TASKS:
+        ds = load_dataset(BBH_DATASET, task_name, split="test")
+        # Deterministic shuffle using hash of task name as seed
+        seed = hash(task_name) & 0xFFFFFFFF
+        indices = list(range(len(ds)))
+        rng = random.Random(seed)
+        rng.shuffle(indices)
+        selected = indices[:BBH_SAMPLES_PER_TASK]
+
+        for ds_idx in selected:
+            row = ds[ds_idx]
+            question = row["input"]
+            # BBH targets are parenthesized like "(B)" — strip to bare letter
+            raw_target = row["target"].strip()
+            target = re.sub(r"[() ]", "", raw_target)
+
+            samples.append(Sample(
+                input=question,
+                target=target,
+                id=f"bbh_{global_idx}",
+                metadata={
+                    "dataset": "bbh",
+                    "task_type": "multiple_choice",
+                    "bbh_task": task_name,
+                    "question_idx": global_idx,
+                },
+            ))
+            global_idx += 1
+    return samples
+
+
+# ---------------------------------------------------------------------------
 # Combined dataset builder
 # ---------------------------------------------------------------------------
 
@@ -380,12 +443,12 @@ _combined_dataset_cache: MemoryDataset | None = None
 
 
 def build_combined_dataset() -> MemoryDataset:
-    """Build combined GPQA-Diamond + MATH-500 dataset. Cached after first call."""
+    """Build combined GPQA-Diamond + MATH-500 + BBH dataset. Cached after first call."""
     global _combined_dataset_cache
     if _combined_dataset_cache is not None:
         return _combined_dataset_cache
-    samples = load_gpqa_diamond() + load_math500()
-    _combined_dataset_cache = MemoryDataset(samples=samples, name="gpqa_math_combined")
+    samples = load_gpqa_diamond() + load_math500() + load_bbh()
+    _combined_dataset_cache = MemoryDataset(samples=samples, name="gpqa_math_bbh_combined")
     return _combined_dataset_cache
 
 

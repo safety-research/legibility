@@ -171,24 +171,69 @@ def load_cot_texts() -> dict:
 def load_foreignness_scores() -> dict:
     """Load foreignness scores, preferring pre-extracted JSON over log parsing.
 
+    Falls back to distributional-shift (perplexity-based) scores when
+    foreignness data is empty.
+
     Returns dict keyed by (original_sample_id, generator_id, epoch, reader_id)
-    with values being the numeric foreignness score (1-5).
+    with values being the numeric foreignness score (1-5) or perplexity float.
     """
     cached_path = RESULTS_DIR / "foreignness_scores.json"
     if cached_path.exists():
         with open(cached_path) as f:
             raw = json.load(f)
-        scores = {}
-        for key_str, v in raw.items():
-            parts = key_str.split("|")
-            sid, gid = parts[0], parts[1]
-            epoch = int(parts[2]) if len(parts) > 2 else 0
-            rid = parts[3] if len(parts) > 3 else ""
-            scores[(sid, gid, epoch, rid)] = v
+        if raw:  # non-empty
+            scores = {}
+            for key_str, v in raw.items():
+                parts = key_str.split("|")
+                sid, gid = parts[0], parts[1]
+                epoch = int(parts[2]) if len(parts) > 2 else 0
+                rid = parts[3] if len(parts) > 3 else ""
+                scores[(sid, gid, epoch, rid)] = v
+            if scores:
+                return scores
+
+    # Try log parsing
+    from classify import extract_foreignness_scores
+    scores = extract_foreignness_scores(LOG_DIR_FOREIGNNESS)
+    if scores:
         return scores
 
-    from classify import extract_foreignness_scores
-    return extract_foreignness_scores(LOG_DIR_FOREIGNNESS)
+    # Fall back to perplexity-based distributional shift scores
+    ds_scores = load_distributional_shift_scores()
+    if ds_scores:
+        # Convert to foreignness-compatible format: use reader_perplexity as the value
+        compat = {}
+        for key, data in ds_scores.items():
+            compat[key] = data.get("reader_perplexity", data.get("kld_proxy", 0.0))
+        return compat
+
+    return {}
+
+
+def load_distributional_shift_scores() -> dict:
+    """Load perplexity-based distributional shift scores from NB10 output.
+
+    Returns dict keyed by (sample_id, generator_id, epoch, reader_id) with
+    values being dicts containing:
+        reader_perplexity, reader_mean_logprob, reader_n_tokens,
+        generator_perplexity, generator_mean_logprob, generator_n_tokens,
+        kld_proxy, kld_proxy_per_char
+    """
+    cached_path = PHASE2_RESULTS_DIR / "distributional_shift_scores.json"
+    if not cached_path.exists():
+        return {}
+
+    with open(cached_path) as f:
+        raw = json.load(f)
+
+    scores = {}
+    for key_str, v in raw.items():
+        parts = key_str.split("|")
+        sid, gid = parts[0], parts[1]
+        epoch = int(parts[2]) if len(parts) > 2 else 0
+        rid = parts[3] if len(parts) > 3 else ""
+        scores[(sid, gid, epoch, rid)] = v
+    return scores
 
 
 def join_cots_with_labels(
@@ -273,6 +318,111 @@ def load_model(
     n_params = sum(p.numel() for p in model.parameters())
     print(f"  Loaded: {n_params/1e9:.1f}B params, 4bit={use_4bit}")
     return model, tokenizer
+
+
+# ---------------------------------------------------------------------------
+# Token-level log-probability extraction (for perplexity / KLD)
+# ---------------------------------------------------------------------------
+
+def compute_perplexity(token_logprobs: np.ndarray) -> float:
+    """PPL = exp(-mean(logprobs)).
+
+    Args:
+        token_logprobs: 1-D array of per-token log-probabilities.
+
+    Returns:
+        Perplexity (scalar).
+    """
+    return float(np.exp(-np.mean(token_logprobs)))
+
+
+def compute_token_logprobs(
+    model,
+    tokenizer,
+    texts: list[str],
+    max_length: int = 4096,
+    batch_size: int = 1,
+    show_progress: bool = True,
+) -> list[dict]:
+    """Compute per-token log-probabilities for a list of texts.
+
+    For each text, tokenizes under the given model's tokenizer and runs a
+    single forward pass to collect log P(token_t | context<t) for every
+    token after the first.
+
+    Args:
+        model: HuggingFace CausalLM (already on GPU).
+        tokenizer: matching tokenizer.
+        texts: list of text strings (e.g. CoT traces).
+        max_length: max tokenization length.
+        batch_size: inference batch size (1 recommended for long CoTs).
+        show_progress: display tqdm progress bar.
+
+    Returns:
+        List of dicts, one per text, with keys:
+            token_logprobs: np.ndarray (n_tokens-1,) of log P(t | context)
+            n_tokens: int — number of tokens (including first)
+            mean_logprob: float — mean of token_logprobs
+            perplexity: float — exp(-mean_logprob)
+    """
+    import torch
+    from tqdm import tqdm
+
+    model.eval()
+    device = next(model.parameters()).device
+
+    results = []
+    n_batches = (len(texts) + batch_size - 1) // batch_size
+    iterator = range(n_batches)
+    if show_progress:
+        iterator = tqdm(iterator, desc="Computing logprobs")
+
+    for batch_idx in iterator:
+        batch_texts = texts[batch_idx * batch_size : (batch_idx + 1) * batch_size]
+
+        inputs = tokenizer(
+            batch_texts,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=max_length,
+        ).to(device)
+
+        with torch.no_grad():
+            outputs = model(**inputs)
+
+        # outputs.logits: (batch, seq_len, vocab_size)
+        logits = outputs.logits
+        log_probs = torch.log_softmax(logits, dim=-1)
+
+        input_ids = inputs["input_ids"]
+        attention_mask = inputs["attention_mask"]
+
+        for i in range(input_ids.shape[0]):
+            seq_len = attention_mask[i].sum().item()
+            # Shift: log_probs[t] predicts token at position t+1
+            # So for positions 1..seq_len-1, gather log P(token[t] | context<t)
+            shifted_logprobs = log_probs[i, :seq_len - 1, :]  # (seq_len-1, vocab)
+            target_ids = input_ids[i, 1:seq_len]  # (seq_len-1,)
+
+            token_lps = shifted_logprobs.gather(
+                dim=-1, index=target_ids.unsqueeze(-1)
+            ).squeeze(-1)  # (seq_len-1,)
+
+            token_lps_np = token_lps.cpu().float().numpy()
+            mean_lp = float(np.mean(token_lps_np))
+
+            results.append({
+                "token_logprobs": token_lps_np,
+                "n_tokens": int(seq_len),
+                "mean_logprob": mean_lp,
+                "perplexity": compute_perplexity(token_lps_np),
+            })
+
+        del outputs, logits, log_probs
+        torch.cuda.empty_cache()
+
+    return results
 
 
 # ---------------------------------------------------------------------------
@@ -552,7 +702,8 @@ def train_binary_probe(
 ) -> dict:
     """Train a binary logistic regression probe with stratified CV.
 
-    Adapted from linear_probe.py:144-193.
+    Uses sklearn Pipeline to fit the scaler inside each CV fold,
+    preventing data leakage from validation samples into scaling statistics.
 
     Args:
         features: (n_samples, hidden_dim) activation features
@@ -566,25 +717,29 @@ def train_binary_probe(
     """
     from sklearn.linear_model import LogisticRegression
     from sklearn.model_selection import StratifiedKFold, cross_val_score
+    from sklearn.pipeline import Pipeline
     from sklearn.preprocessing import StandardScaler
     from sklearn.metrics import roc_auc_score
 
-    scaler = StandardScaler()
-    features_scaled = scaler.fit_transform(features)
+    pipeline = Pipeline([
+        ("scaler", StandardScaler()),
+        ("probe", LogisticRegression(max_iter=max_iter, random_state=seed, solver="lbfgs")),
+    ])
 
     cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
-    probe = LogisticRegression(max_iter=max_iter, random_state=seed, solver="lbfgs")
 
     cv_scores = cross_val_score(
-        probe, features_scaled, labels, cv=cv, scoring="roc_auc"
+        pipeline, features, labels, cv=cv, scoring="roc_auc"
     )
 
     # Bootstrap 95% CI on mean AUROC
     ci_lo, ci_hi = _bootstrap_ci(cv_scores, n_boot=1000, seed=seed)
 
-    # Final fit on all data
-    probe.fit(features_scaled, labels)
-    probabilities = probe.predict_proba(features_scaled)[:, 1]
+    # Final fit on all data (for inspection / downstream use)
+    pipeline.fit(features, labels)
+    scaler = pipeline.named_steps["scaler"]
+    probe = pipeline.named_steps["probe"]
+    probabilities = pipeline.predict_proba(features)[:, 1]
 
     return {
         "auroc": float(np.mean(cv_scores)),
@@ -594,6 +749,7 @@ def train_binary_probe(
         "train_auroc": float(roc_auc_score(labels, probabilities)),
         "probe_model": probe,
         "scaler": scaler,
+        "pipeline": pipeline,
         "n_samples": len(labels),
         "n_features": features.shape[1],
     }
@@ -602,28 +758,31 @@ def train_binary_probe(
 def permutation_test(
     features: np.ndarray,
     labels: np.ndarray,
-    n_permutations: int = 100,
+    n_permutations: int = 1000,
     n_splits: int = 5,
     seed: int = 42,
 ) -> dict:
     """Run permutation test: shuffle labels and measure chance-level AUROC.
 
+    Uses sklearn Pipeline to avoid scaler data leakage in each CV fold.
+
     Returns dict with null_aurocs, p_value, observed_auroc.
     """
     from sklearn.linear_model import LogisticRegression
     from sklearn.model_selection import StratifiedKFold, cross_val_score
+    from sklearn.pipeline import Pipeline
     from sklearn.preprocessing import StandardScaler
 
     rng = np.random.RandomState(seed)
 
-    scaler = StandardScaler()
-    features_scaled = scaler.fit_transform(features)
-
     # Observed
     cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
-    probe = LogisticRegression(max_iter=1000, random_state=seed)
+    pipeline = Pipeline([
+        ("scaler", StandardScaler()),
+        ("probe", LogisticRegression(max_iter=1000, random_state=seed)),
+    ])
     observed = np.mean(cross_val_score(
-        probe, features_scaled, labels, cv=cv, scoring="roc_auc"
+        pipeline, features, labels, cv=cv, scoring="roc_auc"
     ))
 
     # Null distribution
@@ -631,9 +790,12 @@ def permutation_test(
     for i in range(n_permutations):
         shuffled = rng.permutation(labels)
         cv_i = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed + i)
-        probe_i = LogisticRegression(max_iter=1000, random_state=seed + i)
+        pipeline_i = Pipeline([
+            ("scaler", StandardScaler()),
+            ("probe", LogisticRegression(max_iter=1000, random_state=seed + i)),
+        ])
         score = np.mean(cross_val_score(
-            probe_i, features_scaled, shuffled, cv=cv_i, scoring="roc_auc"
+            pipeline_i, features, shuffled, cv=cv_i, scoring="roc_auc"
         ))
         null_aurocs.append(score)
 

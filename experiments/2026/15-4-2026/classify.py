@@ -222,27 +222,34 @@ def classify_cots(
     Args:
         gen_records: generation log records
         reader_records: reader evaluation log records
-        r4_transform: which R4 CoT transform variant to use for
-            answer-leak detection. Options: "plain", "_mask", "_t64", "_t5p".
-            Using "_mask" removes explicit answer statements before R4 sees
-            the CoT, so R4 passing means the answer leaked through the
-            reasoning structure itself (not just a final answer statement).
+        r4_transform: which CoT transform variant to use for all readers.
+            Options: "plain", "_mask", "_t64", "_t5p", "_tleak".
+            All transforms run across all readers (R1-R4).
 
     Returns list of classification records with:
         sample_id, epoch, generator_id, label, surprisal_R1/R2/R3,
         filter_reason (if filtered), and per-reader C2 results.
     """
-    # Filter reader records: for R4, keep only the selected transform variant.
-    # For other readers, keep only plain (no transform) records.
+    # Filter reader records by transform variant.
+    # All transforms now run across all readers (R1-R4).
+    # For C2 records, keep only those matching the selected transform.
+    # "plain" transform matches records with transform "plain" or "none".
     filtered_reader_records = []
     for rec in reader_records:
-        rid = rec.get("reader_id", "")
+        condition = rec.get("condition", "")
         transform = rec.get("cot_transform", "plain")
-        if rid == "R4":
-            if transform == r4_transform:
+
+        # C1/C4: always include (not affected by CoT transforms)
+        if condition in ("C1", "C4"):
+            filtered_reader_records.append(rec)
+            continue
+
+        # C2: keep only the selected transform variant
+        if r4_transform == "plain":
+            if transform in ("plain", "none"):
                 filtered_reader_records.append(rec)
         else:
-            if transform == "plain":
+            if transform == r4_transform:
                 filtered_reader_records.append(rec)
 
     lookups = _build_reader_lookups(filtered_reader_records)
@@ -364,6 +371,7 @@ def classify_cots(
         else:
             record["label"] = "ILLEGIBLE"
 
+        record["cot_source"] = "truncated_at_leak" if r4_transform == "_tleak" else "original"
         results.append(record)
 
     return results
@@ -376,6 +384,7 @@ def classify_cots(
 def run_v1_surprisal_regression(
     classifications: list[dict],
     foreignness_scores: dict | None = None,
+    perplexity_scores: dict | None = None,
 ) -> dict:
     """V1: Logistic regression — C2 success ~ legibility_class + covariate.
 
@@ -383,9 +392,10 @@ def run_v1_surprisal_regression(
 
     The distributional-shift covariate is chosen automatically:
     - If surprisal values are available (from logprobs), use surprisal.
+    - If perplexity_scores dict is provided (from NB10), use reader perplexity.
     - Otherwise, if foreignness_scores dict is provided, use the
       model-graded foreignness score (1-5) as a proxy.
-    - If neither is available, runs without the covariate.
+    - If none are available, runs without the covariate.
     """
     try:
         from sklearn.linear_model import LogisticRegression
@@ -394,6 +404,8 @@ def run_v1_surprisal_regression(
 
     if foreignness_scores is None:
         foreignness_scores = {}
+    if perplexity_scores is None:
+        perplexity_scores = {}
 
     results = {}
     for reader_id in FULL_READERS:
@@ -410,7 +422,7 @@ def run_v1_surprisal_regression(
             is_legible = 1 if rec["label"] == "REASONING_LEGIBLE" else 0
             is_leaked = 1 if rec["label"] == "ANSWER_LEAKED" else 0
 
-            # Try surprisal first, then foreignness as fallback
+            # Try surprisal first, then perplexity, then foreignness
             surprisal = rec.get(f"surprisal_{reader_id}")
             if surprisal is not None:
                 X_rows.append([is_legible, is_leaked, surprisal])
@@ -418,7 +430,24 @@ def run_v1_surprisal_regression(
                 if covariate_name is None:
                     covariate_name = "surprisal"
             else:
-                # Look up foreignness score
+                # Try perplexity from NB10
+                pkey = (
+                    rec["sample_id"],
+                    rec["generator_id"],
+                    rec["epoch"],
+                    reader_id,
+                )
+                ppl_data = perplexity_scores.get(pkey)
+                if ppl_data is not None:
+                    ppl_val = ppl_data.get("reader_perplexity") if isinstance(ppl_data, dict) else float(ppl_data)
+                    if ppl_val is not None:
+                        X_rows.append([is_legible, is_leaked, float(ppl_val)])
+                        y_rows.append(int(c2_correct))
+                        if covariate_name is None:
+                            covariate_name = "perplexity"
+                        continue
+
+                # Fall back to foreignness score
                 fkey = (
                     rec["sample_id"],
                     rec["generator_id"],
@@ -584,11 +613,11 @@ def run_classification(r4_transform: str = "_mask"):
     """Run full classification + validation pipeline. Save results to JSON.
 
     Args:
-        r4_transform: which R4 CoT transform to use for answer-leak detection.
-            "_mask" (default) masks explicit answer patterns before R4 evaluation,
-            so ANSWER_LEAKED means the answer leaked through reasoning structure.
-            "plain" uses raw CoTs (original behavior, nearly everything leaks).
+        r4_transform: which CoT transform to use across all readers.
+            "_mask" (default) masks explicit answer patterns with pad tokens.
+            "plain" uses raw CoTs (original behavior).
             "_t64" truncates last 64 tokens. "_t5p" truncates last 5%.
+            "_tleak" truncates at the first answer-leaking pattern match.
     """
     print(f"R4 answer-leak detector: using transform={r4_transform!r}")
     print("Reading generation logs...")
@@ -613,8 +642,21 @@ def run_classification(r4_transform: str = "_mask"):
     foreignness_scores = extract_foreignness_scores()
     print(f"  Found {len(foreignness_scores)} foreignness scores")
 
+    # Load perplexity-based distributional shift scores (from NB10)
+    perplexity_scores = {}
+    try:
+        from phase2_utils import load_distributional_shift_scores
+        perplexity_scores = load_distributional_shift_scores()
+        print(f"  Found {len(perplexity_scores)} perplexity scores")
+    except Exception:
+        pass
+
     print("\nRunning V1: Distributional-shift regression...")
-    v1 = run_v1_surprisal_regression(classifications, foreignness_scores=foreignness_scores)
+    v1 = run_v1_surprisal_regression(
+        classifications,
+        foreignness_scores=foreignness_scores,
+        perplexity_scores=perplexity_scores,
+    )
     for rid, data in v1.items():
         print(f"  {rid}: {data}")
 
@@ -646,7 +688,8 @@ def run_classification(r4_transform: str = "_mask"):
         },
     }
 
-    output_path = RESULTS_DIR / "classifications.json"
+    transform_label = r4_transform.lstrip("_") if r4_transform != "plain" else "plain"
+    output_path = RESULTS_DIR / f"classifications_{transform_label}.json"
     with open(output_path, "w") as f:
         json.dump(output, f, indent=2, default=str)
     print(f"\nResults saved to {output_path}")
@@ -659,7 +702,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--r4-transform", default="_mask",
-        choices=["plain", "_mask", "_t64", "_t5p"],
+        choices=["plain", "_mask", "_t64", "_t5p", "_tleak"],
         help="R4 CoT transform variant for answer-leak detection (default: _mask)",
     )
     args = parser.parse_args()

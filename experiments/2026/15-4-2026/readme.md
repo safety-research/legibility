@@ -4,7 +4,7 @@ Systematic evaluation of whether external "reader" models can follow chain-of-th
 
 ## Pipeline
 
-**Step 1 - CoT Generation**: 3 generators (DeepSeek-R1-Distill-Qwen-32B, DeepSeek-R1, QwQ-32B) produce K=6 CoTs per question at temperature 0.7 on GPQA-Diamond + MATH-500 (~350 questions). Total: 6,300 generation calls.
+**Step 1 - CoT Generation**: 3 generators (DeepSeek-R1-Distill-Qwen-32B, DeepSeek-R1, QwQ-32B) produce K=6 CoTs per question at temperature 0.7 on GPQA-Diamond + MATH-500 + BBH (~548 questions). Total: ~9,864 generation calls.
 
 **Step 2 - Reader Evaluation**: 4 readers evaluate under 3 conditions:
 - **C1 (Self)**: reader generates its own CoT (baseline capability)
@@ -16,17 +16,28 @@ Systematic evaluation of whether external "reader" models can follow chain-of-th
 - `REASONING_LEGIBLE` - R4 fails truncated C2 but majority of {R1,R2,R3} pass C2 (reasoning is followable)
 - `ILLEGIBLE` - R4 fails truncated C2 and majority of {R1,R2,R3} fail C2 (reasoning is opaque)
 
-Three CoT transforms are applied to R4's input to prevent it from trivially reading off the final answer:
-- **`trunc_last64`** (`_t64`): remove the last 64 whitespace-delimited tokens
-- **`trunc_last5pct`** (`_t5p`): remove the last 5% of characters
-- **`mask`** (`_mask`): replace answer-leaking patterns (e.g. "the answer is X", `\boxed{X}`, "option B is correct") with the reader's pad token. Patterns derived empirically from model-extracted analysis (see `study_patterns.py`)
+Four CoT transforms are applied to prevent models from trivially reading off the final answer:
+- **`trunc_last64`** (`_t64`): remove the last 64 whitespace-delimited tokens (R4 only)
+- **`trunc_last5pct`** (`_t5p`): remove the last 5% of characters (R4 only)
+- **`mask`** (`_mask`): replace answer-leaking patterns (e.g. "the answer is X", `\boxed{X}`, "option B is correct") with the reader's pad token (R4 only). Patterns derived empirically from model-extracted analysis (see `study_patterns.py`)
+- **`truncate_at_leak`** (`_tleak`): truncate the CoT at the earliest answer-leaking pattern match, keeping only the pre-leak reasoning. Unlike other transforms, `_tleak` runs through **all readers** (R1-R3 + R4), recovering previously-discarded ANSWER_LEAKED samples for full reclassification
+
+## Datasets
+
+| Dataset | Samples | Type | Reasoning domains |
+|---------|---------|------|--------------------|
+| GPQA-Diamond | ~198 | Multiple choice (A-D) | Graduate-level STEM |
+| MATH-500 (Level 3-5) | ~150 | Open-ended math | Competition mathematics |
+| BBH (6 subtasks) | ~210 | Multiple choice (A-F) | Temporal, logical, spatial, linguistic |
+
+**BBH subtasks**: `date_understanding`, `logical_deduction_five_objects`, `tracking_shuffled_objects_three_objects`, `disambiguation_qa`, `temporal_sequences`, `movie_recommendation` (35 samples each, deterministically shuffled from `lukaemon/bbh`).
 
 ## Files
 
 | File | Purpose |
 |------|---------|
 | `config.py` | Model IDs, constants, log directories |
-| `data.py` | Dataset loading (GPQA, MATH) + CoT extraction from logs |
+| `data.py` | Dataset loading (GPQA, MATH, BBH) + CoT extraction from logs |
 | `solvers.py` | Custom solvers: cot_generation, crossfill, self_cot, no_cot |
 | `scorers.py` | Custom scorers: generator/reader correctness with answer extraction |
 | `eval.py` | @task definitions + eval_set() orchestration |
@@ -78,23 +89,49 @@ inspect eval-set eval.py@reader_c2_R4_G1 eval.py@reader_c2_R4_G2 eval.py@reader_
   --limit 256 --max-connections 64 --max-tasks 3 \
   --retry-on-error 3 -M "provider={'sort': 'throughput'}"
 
-# Step 2: C2 R4 truncated — last 64 tokens removed
-inspect eval-set eval.py@reader_c2_R4_t64_G1 eval.py@reader_c2_R4_t64_G2 eval.py@reader_c2_R4_t64_G3 \
+# Step 2: C2 ALL readers — truncated last 64 tokens
+inspect eval-set \
+  eval.py@reader_c2_R1_t64_G1 eval.py@reader_c2_R1_t64_G2 eval.py@reader_c2_R1_t64_G3 \
+  eval.py@reader_c2_R2_t64_G1 eval.py@reader_c2_R2_t64_G2 eval.py@reader_c2_R2_t64_G3 \
+  eval.py@reader_c2_R3_t64_G1 eval.py@reader_c2_R3_t64_G2 eval.py@reader_c2_R3_t64_G3 \
+  eval.py@reader_c2_R4_t64_G1 eval.py@reader_c2_R4_t64_G2 eval.py@reader_c2_R4_t64_G3 \
   --log-dir logs/step2_readers --log-dir-allow-dirty \
-  --limit 256 --max-connections 64 --max-tasks 3 \
+  --max-connections 64 --max-tasks 3 \
   --retry-on-error 3 -M "provider={'sort': 'throughput'}"
 
-# Step 2: C2 R4 truncated — last 5% of characters removed
-inspect eval-set eval.py@reader_c2_R4_t5p_G1 eval.py@reader_c2_R4_t5p_G2 eval.py@reader_c2_R4_t5p_G3 \
+# Step 2: C2 ALL readers — truncated last 5% of characters
+inspect eval-set \
+  eval.py@reader_c2_R1_t5p_G1 eval.py@reader_c2_R1_t5p_G2 eval.py@reader_c2_R1_t5p_G3 \
+  eval.py@reader_c2_R2_t5p_G1 eval.py@reader_c2_R2_t5p_G2 eval.py@reader_c2_R2_t5p_G3 \
+  eval.py@reader_c2_R3_t5p_G1 eval.py@reader_c2_R3_t5p_G2 eval.py@reader_c2_R3_t5p_G3 \
+  eval.py@reader_c2_R4_t5p_G1 eval.py@reader_c2_R4_t5p_G2 eval.py@reader_c2_R4_t5p_G3 \
   --log-dir logs/step2_readers --log-dir-allow-dirty \
-  --limit 256 --max-connections 64 --max-tasks 3 \
+  --max-connections 64 --max-tasks 3 \
   --retry-on-error 3 -M "provider={'sort': 'throughput'}"
 
-# Step 2: C2 R4 masked — answer-leaking patterns replaced with pad token
-inspect eval-set eval.py@reader_c2_R4_mask_G1 eval.py@reader_c2_R4_mask_G2 eval.py@reader_c2_R4_mask_G3 \
+# Step 2: C2 ALL readers — answer-leaking patterns masked with pad token
+inspect eval-set \
+  eval.py@reader_c2_R1_mask_G1 eval.py@reader_c2_R1_mask_G2 eval.py@reader_c2_R1_mask_G3 \
+  eval.py@reader_c2_R2_mask_G1 eval.py@reader_c2_R2_mask_G2 eval.py@reader_c2_R2_mask_G3 \
+  eval.py@reader_c2_R3_mask_G1 eval.py@reader_c2_R3_mask_G2 eval.py@reader_c2_R3_mask_G3 \
+  eval.py@reader_c2_R4_mask_G1 eval.py@reader_c2_R4_mask_G2 eval.py@reader_c2_R4_mask_G3 \
   --log-dir logs/step2_readers --log-dir-allow-dirty \
-  --limit 256 --max-connections 64 --max-tasks 3 \
+  --max-connections 64 --max-tasks 3 \
   --retry-on-error 3 -M "provider={'sort': 'throughput'}"
+
+# Step 2: C2 ALL readers — truncated at first answer-leak
+inspect eval-set \
+  eval.py@reader_c2_R1_tleak_G1 eval.py@reader_c2_R1_tleak_G2 eval.py@reader_c2_R1_tleak_G3 \
+  eval.py@reader_c2_R2_tleak_G1 eval.py@reader_c2_R2_tleak_G2 eval.py@reader_c2_R2_tleak_G3 \
+  eval.py@reader_c2_R3_tleak_G1 eval.py@reader_c2_R3_tleak_G2 eval.py@reader_c2_R3_tleak_G3 \
+  eval.py@reader_c2_R4_tleak_G1 eval.py@reader_c2_R4_tleak_G2 eval.py@reader_c2_R4_tleak_G3 \
+  --log-dir logs/step2_readers --log-dir-allow-dirty \
+  --max-connections 64 --max-tasks 3 \
+  --retry-on-error 3 -M "provider={'sort': 'throughput'}"
+
+# Classification (pick one transform)
+python classify.py --r4-transform _t64
+python classify.py --r4-transform _tleak
 ```
 
 ## Foreignness Evaluation (distributional-shift covariate)

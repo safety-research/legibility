@@ -25,6 +25,7 @@ READERS = {
 }
 
 FULL_READERS = ["R1", "R2", "R3"]  # R4 is C2-only
+THINKING_READERS = {"R1"}  # readers that emit <think> blocks
 
 # --- Generation hyperparameters ---
 K_SAMPLES = 6
@@ -38,3 +39,15 @@ GPQA_CONFIG = "gpqa_diamond"
 MATH_DATASET = "nlile/hendrycks-MATH-benchmark"
 MATH_MIN_LEVEL = 3
 MATH_MAX_LEVEL = 5
+
+# --- BBH (BIG-Bench Hard) ---
+BBH_DATASET = "lukaemon/bbh"
+BBH_TASKS = [
+    "date_understanding",
+    "logical_deduction_five_objects",
+    "tracking_shuffled_objects_three_objects",
+    "disambiguation_qa",
+    "temporal_sequences",
+    "movie_recommendation",
+]
+BBH_SAMPLES_PER_TASK = 35

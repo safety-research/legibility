@@ -9,7 +9,7 @@
 from inspect_ai.solver import Generate, Solver, TaskState, solver
 from inspect_ai.model import ChatMessageUser, ChatMessageAssistant
 
-from config import COT_MAX_TOKENS, COT_TEMPERATURE, ANSWER_MAX_TOKENS
+from config import COT_MAX_TOKENS, COT_TEMPERATURE, ANSWER_MAX_TOKENS, THINKING_READERS
 
 
 # ---------------------------------------------------------------------------
@@ -63,7 +63,7 @@ def cot_generation_solver() -> Solver:
 # ---------------------------------------------------------------------------
 
 @solver
-def crossfill_solver() -> Solver:
+def crossfill_solver(reader_id: str = "") -> Solver:
     """C2 crossfill solver: prefill reader with generator's CoT.
 
     Reads CoT from state.metadata["cot_text"], inserts it as an assistant
@@ -71,6 +71,9 @@ def crossfill_solver() -> Solver:
 
     The CoT text should contain only the reasoning trace (no final answer),
     having been stripped by extract_think_block() during CoT extraction.
+
+    For reasoning models (THINKING_READERS), prepends /no_think to the
+    followup message to disable the thinking phase.
 
     Logprobs / surprisal note:
         SPEC 1.2 requires per-CoT surprisal as a regression covariate,
@@ -102,6 +105,9 @@ def crossfill_solver() -> Solver:
                 "Based on the reasoning above, what is the final answer? "
                 "Reply with your answer inside \\boxed{} notation."
             )
+
+        if reader_id in THINKING_READERS:
+            followup = "/no_think\n\n" + followup
 
         state.messages.append(
             ChatMessageUser(content=followup)
@@ -165,8 +171,12 @@ def self_cot_solver() -> Solver:
 # ---------------------------------------------------------------------------
 
 @solver
-def no_cot_solver() -> Solver:
-    """C4 solver: reader answers with no chain-of-thought."""
+def no_cot_solver(reader_id: str = "") -> Solver:
+    """C4 solver: reader answers with no chain-of-thought.
+
+    For reasoning models (those that emit <think> blocks), prepends
+    /no_think to the user message to disable the thinking phase.
+    """
     async def solve(state: TaskState, generate: Generate) -> TaskState:
         task_type = state.metadata.get("task_type", "")
 
@@ -184,10 +194,13 @@ def no_cot_solver() -> Solver:
         if state.messages and state.messages[-1].role == "user":
             content = state.messages[-1].content
             if isinstance(content, str):
-                state.messages[-1].content = content + suffix
+                prefix = "/no_think\n\n" if reader_id in THINKING_READERS else ""
+                state.messages[-1].content = prefix + content + suffix
             elif isinstance(content, list):
                 for block in content:
                     if hasattr(block, "text"):
+                        if reader_id in THINKING_READERS:
+                            block.text = "/no_think\n\n" + block.text
                         block.text += suffix
                         break
 
