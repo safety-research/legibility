@@ -103,7 +103,8 @@ def crossfill_solver(reader_id: str = "") -> Solver:
         else:
             followup = (
                 "Based on the reasoning above, what is the final answer? "
-                "Reply with your answer inside \\boxed{} notation."
+                "Do NOT re-derive or explain. Just state the answer inside "
+                "\\boxed{} notation and nothing else."
             )
 
         if reader_id in THINKING_READERS:

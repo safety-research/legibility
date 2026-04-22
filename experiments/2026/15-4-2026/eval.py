@@ -325,6 +325,26 @@ def reader_c2_R4_G3() -> Task:
     return _reader_c2("R4", "G3")
 
 
+# --- R5 x generators (Google-lineage control, C2 only) ---
+
+@task
+def reader_c2_R5_G1() -> Task:
+    """C2: R5 (Gemma-4-31B) reads G1's CoT — Google-lineage control."""
+    return _reader_c2("R5", "G1")
+
+
+@task
+def reader_c2_R5_G2() -> Task:
+    """C2: R5 (Gemma-4-31B) reads G2's CoT — Google-lineage control."""
+    return _reader_c2("R5", "G2")
+
+
+@task
+def reader_c2_R5_G3() -> Task:
+    """C2: R5 (Gemma-4-31B) reads G3's CoT — Google-lineage control."""
+    return _reader_c2("R5", "G3")
+
+
 # --- ALL readers: truncated last 64 tokens ---
 
 @task
@@ -397,6 +417,24 @@ def reader_c2_R4_t64_G2() -> Task:
 def reader_c2_R4_t64_G3() -> Task:
     """C2: R4 reads G3's CoT truncated (last 64 tokens removed)."""
     return _reader_c2("R4", "G3", cot_transform=truncate_last_n_tokens, name_suffix="_t64")
+
+
+@task
+def reader_c2_R5_t64_G1() -> Task:
+    """C2: R5 reads G1's CoT truncated (last 64 tokens removed)."""
+    return _reader_c2("R5", "G1", cot_transform=truncate_last_n_tokens, name_suffix="_t64")
+
+
+@task
+def reader_c2_R5_t64_G2() -> Task:
+    """C2: R5 reads G2's CoT truncated (last 64 tokens removed)."""
+    return _reader_c2("R5", "G2", cot_transform=truncate_last_n_tokens, name_suffix="_t64")
+
+
+@task
+def reader_c2_R5_t64_G3() -> Task:
+    """C2: R5 reads G3's CoT truncated (last 64 tokens removed)."""
+    return _reader_c2("R5", "G3", cot_transform=truncate_last_n_tokens, name_suffix="_t64")
 
 
 # --- ALL readers: truncated last 5% of characters ---
@@ -473,6 +511,24 @@ def reader_c2_R4_t5p_G3() -> Task:
     return _reader_c2("R4", "G3", cot_transform=truncate_last_pct, name_suffix="_t5p")
 
 
+@task
+def reader_c2_R5_t5p_G1() -> Task:
+    """C2: R5 reads G1's CoT truncated (last 5% of chars removed)."""
+    return _reader_c2("R5", "G1", cot_transform=truncate_last_pct, name_suffix="_t5p")
+
+
+@task
+def reader_c2_R5_t5p_G2() -> Task:
+    """C2: R5 reads G2's CoT truncated (last 5% of chars removed)."""
+    return _reader_c2("R5", "G2", cot_transform=truncate_last_pct, name_suffix="_t5p")
+
+
+@task
+def reader_c2_R5_t5p_G3() -> Task:
+    """C2: R5 reads G3's CoT truncated (last 5% of chars removed)."""
+    return _reader_c2("R5", "G3", cot_transform=truncate_last_pct, name_suffix="_t5p")
+
+
 # --- ALL readers: answer-leaking patterns masked with pad token ---
 
 @task
@@ -545,6 +601,24 @@ def reader_c2_R4_mask_G2() -> Task:
 def reader_c2_R4_mask_G3() -> Task:
     """C2: R4 reads G3's CoT with answer-leaking patterns masked."""
     return _reader_c2("R4", "G3", cot_transform=make_mask_transform("R4"), name_suffix="_mask")
+
+
+@task
+def reader_c2_R5_mask_G1() -> Task:
+    """C2: R5 reads G1's CoT with answer-leaking patterns masked."""
+    return _reader_c2("R5", "G1", cot_transform=make_mask_transform("R5"), name_suffix="_mask")
+
+
+@task
+def reader_c2_R5_mask_G2() -> Task:
+    """C2: R5 reads G2's CoT with answer-leaking patterns masked."""
+    return _reader_c2("R5", "G2", cot_transform=make_mask_transform("R5"), name_suffix="_mask")
+
+
+@task
+def reader_c2_R5_mask_G3() -> Task:
+    """C2: R5 reads G3's CoT with answer-leaking patterns masked."""
+    return _reader_c2("R5", "G3", cot_transform=make_mask_transform("R5"), name_suffix="_mask")
 
 
 # --- ALL readers x generators: truncated at first answer-leak ---
@@ -621,6 +695,24 @@ def reader_c2_R4_tleak_G3() -> Task:
     return _reader_c2("R4", "G3", cot_transform=truncate_at_first_leak, name_suffix="_tleak")
 
 
+@task
+def reader_c2_R5_tleak_G1() -> Task:
+    """C2: R5 reads G1's CoT truncated at first answer-leak."""
+    return _reader_c2("R5", "G1", cot_transform=truncate_at_first_leak, name_suffix="_tleak")
+
+
+@task
+def reader_c2_R5_tleak_G2() -> Task:
+    """C2: R5 reads G2's CoT truncated at first answer-leak."""
+    return _reader_c2("R5", "G2", cot_transform=truncate_at_first_leak, name_suffix="_tleak")
+
+
+@task
+def reader_c2_R5_tleak_G3() -> Task:
+    """C2: R5 reads G3's CoT truncated at first answer-leak."""
+    return _reader_c2("R5", "G3", cot_transform=truncate_at_first_leak, name_suffix="_tleak")
+
+
 # ===================================================================
 # Python pipeline orchestration (for `python eval.py` usage)
 # ===================================================================
@@ -660,23 +752,24 @@ def run_step2(max_samples: int | None = None):
     for rid in FULL_READERS:
         for gid in ["G1", "G2", "G3"]:
             tasks.append(_reader_c2(rid, gid))
-    # C2: R4 x generators (canonical, un-truncated)
-    for gid in ["G1", "G2", "G3"]:
-        tasks.append(_reader_c2("R4", gid))
+    # C2: R4, R5 x generators (canonical, un-truncated)
+    for rid in ["R4", "R5"]:
+        for gid in ["G1", "G2", "G3"]:
+            tasks.append(_reader_c2(rid, gid))
     # C2: ALL readers x generators (truncated — last 64 tokens)
-    for rid in FULL_READERS + ["R4"]:
+    for rid in FULL_READERS + ["R4", "R5"]:
         for gid in ["G1", "G2", "G3"]:
             tasks.append(_reader_c2(rid, gid, cot_transform=truncate_last_n_tokens, name_suffix="_t64"))
     # C2: ALL readers x generators (truncated — last 5% chars)
-    for rid in FULL_READERS + ["R4"]:
+    for rid in FULL_READERS + ["R4", "R5"]:
         for gid in ["G1", "G2", "G3"]:
             tasks.append(_reader_c2(rid, gid, cot_transform=truncate_last_pct, name_suffix="_t5p"))
     # C2: ALL readers x generators (masked — answer-leaking patterns replaced with pad token)
-    for rid in FULL_READERS + ["R4"]:
+    for rid in FULL_READERS + ["R4", "R5"]:
         for gid in ["G1", "G2", "G3"]:
             tasks.append(_reader_c2(rid, gid, cot_transform=make_mask_transform(rid), name_suffix="_mask"))
     # C2: ALL readers x generators (truncated at first answer-leak)
-    for rid in FULL_READERS + ["R4"]:
+    for rid in FULL_READERS + ["R4", "R5"]:
         for gid in ["G1", "G2", "G3"]:
             tasks.append(_reader_c2(rid, gid,
                 cot_transform=truncate_at_first_leak, name_suffix="_tleak"))

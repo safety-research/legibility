@@ -48,6 +48,12 @@ LOCAL_MODELS = {
         "size_gb": 140,
         "quantize_4bit": True,
     },
+    "R5": {
+        "hf_id": "google/gemma-4-31b-it",
+        "n_layers": 60,
+        "hidden_dim": 5376,
+        "size_gb": 62,
+    },
 }
 
 ACTIVATIONS_DIR = BASE_DIR / "activations"

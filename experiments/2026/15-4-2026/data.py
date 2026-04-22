@@ -146,6 +146,7 @@ READER_PAD_TOKENS: dict[str, str] = {
     "R2": "<|finetune_right_pad_id|>", # Llama-3.1
     "R3": "<\uff5cend\u2581of\u2581sentence\uff5c>",  # DeepSeek-V3: <｜end▁of▁sentence｜>
     "R4": "<pad>",                     # Gemma-3
+    "R5": "<pad>",                     # Gemma-4
 }
 
 # Regex patterns that directly convey the answer in a CoT.

@@ -33,9 +33,11 @@
 | R2 | Llama-3.1-70B-Instruct | 70B | SFT + RLHF, no reasoning | Non-reasoning reader | C1, C2, C4 |
 | R3 | DeepSeek-V3 | 671B | Pretrain + SFT, no RL reasoning | Base model control | C1, C2, C4 |
 | R4 | Qwen3-4B | 4B | Reasoning-capable but low capacity | Answer-leakage detector | C2 only |
+| R5 | Gemma-4-31B-IT | 31B | SFT + RL (thinking disabled) | Google-lineage control | C2 only |
 
 **R3** tests whether RL created a representational format absent from the pretrained substrate.
 **R4** tests whether CoT success requires reasoning or merely answer extraction.
+**R5** controls for model lineage — the only Google-family reader at full scale.
 
 ---
 
@@ -59,7 +61,7 @@
 | Condition | Input to reader | Measures | Readers |
 |-----------|----------------|----------|---------|
 | C1: Self | R generates own CoT for Q | R's baseline capability | R1, R2, R3 |
-| C2: Cross | Prefill R with generator's CoT, R answers Q | Can R use this CoT? | R1, R2, R3, R4 |
+| C2: Cross | Prefill R with generator's CoT, R answers Q | Can R use this CoT? | R1, R2, R3, R4, R5 |
 | C4: None | R answers Q with no CoT | Does R need CoT? | R1, R2, R3 |
 
 C1 and C4 are shared across CoTs for same (R, Q) pair.
@@ -168,6 +170,8 @@ Primary activation model: **G3 (QwQ-32B)** for exhaustive extraction. G1/G2 for 
 
 **Data**: open-weight reader activations when processing reasoning-legible vs. illegible CoTs.
 
+**Readers**: R2 (Llama-3.1-70B, 4-bit quantized) and R5 (Gemma-4-31B-IT, full bf16). Two readers from different model families (Meta vs. Google) test whether reader-side patterns generalize across lineages.
+
 **Method**: compare reader activation patterns between successful and failed CoT comprehension. Include surprisal as covariate to separate "text looks foreign" from "reasoning is opaque."
 
 ### Experiment E: Legibility Localization via Truncation
@@ -209,7 +213,7 @@ Primary activation model: **G3 (QwQ-32B)** for exhaustive extraction. G1/G2 for 
 ```
 Phase 1: Classification
 ├── Generators: R1-Zero (G1), R1 (G2), QwQ-32B (G3)
-├── Readers: Qwen3-32B (R1), Llama-70B (R2), DeepSeek-V3 (R3), Qwen3-4B (R4)
+├── Readers: Qwen3-32B (R1), Llama-70B (R2), DeepSeek-V3 (R3), Qwen3-4B (R4), Gemma-4-31B-IT (R5)
 ├── 6,300 CoTs evaluated across 4 readers
 ├── Per-token surprisal recorded on every C2 pass (R1–R3)
 ├── Three-tier output: ANSWER-LEAKED / REASONING-LEGIBLE / ILLEGIBLE
@@ -222,7 +226,7 @@ Phase 2: Activation Analysis (REASONING-LEGIBLE vs. ILLEGIBLE only)
 ├── Exp A: representation comparison (probes, CKA, attention)
 ├── Exp B: pre-CoT illegibility prediction
 ├── Exp C: transition dynamics (with reasoning-horizon control)
-├── Exp D: reader-side activations
+├── Exp D: reader-side activations (R2 + R5)
 ├── Exp E: truncation-based localization
 └── Exp F: narration vs. computation (G1↔G2)
 ```

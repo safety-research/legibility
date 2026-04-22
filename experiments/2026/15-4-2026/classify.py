@@ -361,6 +361,8 @@ def classify_cots(
                 record["c2_results"][rid] = c2_data["correct"]
 
         record["c2_results"]["R4"] = r4_passes
+        r5_c2 = lookups["c2"].get("R5", {}).get(generator_id, {}).get(key)
+        record["c2_results"]["R5"] = r5_c2["correct"] if r5_c2 else None
         majority_full_pass = full_reader_total > 0 and full_reader_passes > (full_reader_total / 2)
 
         # Classification

@@ -22,9 +22,10 @@ READERS = {
     "R2": "openrouter/meta-llama/llama-3.1-70b-instruct",
     "R3": "openrouter/deepseek/deepseek-v3.2",
     "R4": "openrouter/google/gemma-3-4b-it",
+    "R5": "openrouter/google/gemma-4-31b-it",
 }
 
-FULL_READERS = ["R1", "R2", "R3"]  # R4 is C2-only
+FULL_READERS = ["R1", "R2", "R3"]  # R4, R5 are C2-only
 THINKING_READERS = {"R1"}  # readers that emit <think> blocks
 
 # --- Generation hyperparameters ---
