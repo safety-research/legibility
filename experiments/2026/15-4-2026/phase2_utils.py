@@ -435,6 +435,14 @@ def compute_token_logprobs(
 # Activation extraction
 # ---------------------------------------------------------------------------
 
+def _get_num_hidden_layers(model) -> int:
+    """Get num_hidden_layers from model config, handling nested configs (e.g. Gemma 4)."""
+    config = model.config
+    if hasattr(config, "text_config") and hasattr(config.text_config, "num_hidden_layers"):
+        return config.text_config.num_hidden_layers
+    return config.num_hidden_layers
+
+
 def get_default_layer_indices(n_layers: int, stride: int = 4) -> list[int]:
     """Return default layer indices: every `stride`-th layer + last layer."""
     indices = list(range(0, n_layers, stride)) + [n_layers - 1]
@@ -477,7 +485,7 @@ def extract_activations(
     model.eval()
     device = next(model.parameters()).device
 
-    n_layers = model.config.num_hidden_layers
+    n_layers = _get_num_hidden_layers(model)
     if layer_indices is None:
         layer_indices = get_default_layer_indices(n_layers)
 
@@ -576,7 +584,7 @@ def extract_activations_at_position(
     model.eval()
     device = next(model.parameters()).device
 
-    n_layers = model.config.num_hidden_layers
+    n_layers = _get_num_hidden_layers(model)
     if layer_indices is None:
         layer_indices = get_default_layer_indices(n_layers)
 
