@@ -1,0 +1,10 @@
+[lint]
+select = ["E", "F", "W"]
+ignore = [
+    "E402",  # Module-level imports after load_dotenv / runtime setup are intentional
+    "E501",  # Line length handled by ruff-format; remaining long lines are in docstrings/comments
+]
+
+[lint.per-file-ignores]
+"experiments/**/eval.py" = ["E402"]
+"experiments/**/data.py" = ["E402"]
